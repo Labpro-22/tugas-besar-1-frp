@@ -4,6 +4,7 @@
 #include <memory>
 #include "../../include/models/Dice.hpp"
 #include "../../include/core/TurnManager.hpp"
+using namespace std;
 
 class Player;
 class Board;
@@ -22,7 +23,7 @@ class SaveLoadManager;
 class GameEngine{
     private:
         Board* board;
-        std::vector<Player*> players;
+        vector<Player*> players;
         bool gameOver;
         int maxTurn;
         int goSalary;
@@ -41,7 +42,7 @@ class GameEngine{
         void initBoard();
         void handleJailTurn(Player& p);
         void awardPassGoSalary(Player& p);
-        std::vector<bool> buildBankruptFlags() const;
+        vector<bool> buildBankruptFlags() const;
     
     public:
         GameEngine();
@@ -60,8 +61,8 @@ class GameEngine{
         void setTransactionLogger(TransactionLogger* tl);
 
         //Siklus permainan
-        void startNewGame(int nPlayers, std::vector<std::string> names);
-        void loadGame(const std::string& filename);
+        void startNewGame(int nPlayers, vector<string> names);
+        void loadGame(const string& filename);
         void run();
         void processCommand(const Command& cmd);
         void executeTurn();
@@ -72,8 +73,8 @@ class GameEngine{
 
         //akses state
         Player& getCurrentPlayer();
-        Player* getPlayerByName(const std::string& name);
-        std::vector<Player*> getActivePlayers() const;
+        Player* getPlayerByName(const string& name);
+        vector<Player*> getActivePlayers() const;
     
         // Getter untuk Manager lain yang perlu mengakses engine
         Board& getBoard();

@@ -115,3 +115,17 @@ public:
     NullTileException()
         : GameException("Cannot add a null tile to the board.") {}
 };
+
+// exception for Dice (cek nilai input dadu ketika setManual(), rentang [1,6])
+class InvalidDiceValueException : public GameException{
+    public:
+        explicit InvalidDiceValueException(int value, int faces) : GameException("Invalid dice value: " + std::to_string(value) + ". Dice Value Must be between 1 and 6"){}
+};
+
+//exception for save/load
+class SaveLoadException : public GameException {
+public:
+    explicit SaveLoadException(const std::string& msg)
+        : GameException("SaveLoad error: " + msg) {}
+};
+

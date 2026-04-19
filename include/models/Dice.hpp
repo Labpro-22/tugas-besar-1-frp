@@ -1,6 +1,6 @@
 #pragma once
 #include <utility>
-
+using namespace std;
 class Dice{
     private:
         int die1;
@@ -9,8 +9,8 @@ class Dice{
     
     public:
         explicit Dice(int faces = 6); //explicit untuk mencegah implicit conversion
-        std::pair<int,int> rollRandom();
-        std::pair<int,int> setManual(int dadu1, int dadu2);
+        pair<int,int> rollRandom();
+        pair<int,int> setManual(int dadu1, int dadu2);
         bool isDouble() const;
         int getTotal() const;
         int getDie1() const;

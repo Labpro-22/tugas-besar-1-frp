@@ -4,16 +4,16 @@
 #include <ctime>
 
 Dice::Dice(int faces) : die1(1), die2(1), faces(faces){
-    std::srand(static_cast<unsigned int>(std::time(nullptr)));
+    srand(static_cast<unsigned int>(time(nullptr)));
 }
 
-std::pair<int,int> Dice::rollRandom(){
-    die1 = (std::rand() % faces) + 1;
-    die2 = (std::rand() % faces) + 1;
+pair<int,int> Dice::rollRandom(){
+    die1 = (rand() % faces) + 1;
+    die2 = (rand() % faces) + 1;
     return{die1,die2};
 }
 
-std::pair<int, int> Dice::setManual(int dice1, int dice2){
+pair<int, int> Dice::setManual(int dice1, int dice2){
     if (dice1 < 1 || dice1 > faces) {
         throw InvalidDiceValueException(dice1,faces);
     }

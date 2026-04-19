@@ -1,9 +1,10 @@
 #pragma once
 #include <vector>
+using namespace std;
 
 class TurnManager {
     private:
-        std::vector<int> turnOrder;
+        vector<int> turnOrder;
         int currentIndex;
         int currentTurnNumber;
         bool extraTurnGranted;
@@ -12,7 +13,7 @@ class TurnManager {
         TurnManager();
         void initializeOrder(int nPlayers);
         int getCurrentPlayerIndex() const;
-        void nextPlayer(const std::vector<bool>& bankruptFlags);
+        void nextPlayer(const vector<bool>& bankruptFlags);
         void grantExtraTurn();
         int getTurnNumber() const;
         void removePlayer(int playerIndex);

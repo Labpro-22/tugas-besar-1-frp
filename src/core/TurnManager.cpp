@@ -13,10 +13,10 @@ void TurnManager::initializeOrder(int nPlayers){
     }
 
     // Pakai algoritma Fisher-Yates Shuffle
-    std::srand(static_cast<unsigned int>(std::time(nullptr)));
+    srand(static_cast<unsigned int>(time(nullptr)));
     for(int i=nPlayers - 1; i > 0;--i){
-        int j = std::rand() % (i+1);
-        std::swap(turnOrder[i], turnOrder[j]);
+        int j = rand() % (i+1);
+        swap(turnOrder[i], turnOrder[j]);
     }
     currentIndex = 0;
     currentTurnNumber = 1;
@@ -25,12 +25,12 @@ void TurnManager::initializeOrder(int nPlayers){
 
 int TurnManager::getCurrentPlayerIndex() const{
     if(turnOrder.empty()){
-        throw std::runtime_error("TurnManager: turnOrder is empty");
+        throw runtime_error("TurnManager: turnOrder is empty");
     }
     return turnOrder[currentIndex];
 }
 
-void TurnManager::nextPlayer(const std::vector<bool>& bankruptFlags){
+void TurnManager::nextPlayer(const vector<bool>& bankruptFlags){
     if (turnOrder.empty()) return;
 
     // kondisi ada extra turn
@@ -62,10 +62,10 @@ int TurnManager::getTurnNumber() const{
 }
 
 void TurnManager::removePlayer(int playerIndex){
-    auto it = std::find(turnOrder.begin(),turnOrder.end(), playerIndex);
+    auto it = find(turnOrder.begin(),turnOrder.end(), playerIndex);
     if(it == turnOrder.end()) return;
 
-    int removedPos = static_cast<int>(std::distance(turnOrder.begin(),it));
+    int removedPos = static_cast<int>(distance(turnOrder.begin(),it));
     turnOrder.erase(it);
 
     //currentIndex disesuaikan agar tidak lompat
