@@ -95,4 +95,23 @@ public:
         : GameException("Player '" + username + "' does not own property '" + propCode + "'") {}
 };
 
+// board belum diinisialisasi saat diakses
+class BoardEmptyException : public GameException {
+public:
+    BoardEmptyException()
+        : GameException("Board has no tiles. Make sure the board is initialized before use.") {}
+};
 
+// kode tile tidak ditemukan di papan
+class TileNotFoundException : public GameException {
+public:
+    explicit TileNotFoundException(const std::string& code)
+        : GameException("Tile with code '" + code + "' not found on board.") {}
+};
+
+// addTile dipanggil dengan nullptr
+class NullTileException : public GameException {
+public:
+    NullTileException()
+        : GameException("Cannot add a null tile to the board.") {}
+};

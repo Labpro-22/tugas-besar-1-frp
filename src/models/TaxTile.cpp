@@ -2,6 +2,7 @@
 #include "../../include/models/Player.hpp"
 #include "../../include/models/Property.hpp"
 #include "../../include/models/StreetProperty.hpp"
+#include "../../include/utils/GameException.hpp"
 
 TaxTile::TaxTile(int index, TaxType taxType, int flatAmount, int percentage) : Tile (index, taxType == TaxType::PPH ? "PPH" : "PBM", taxType == TaxType::PPH ? "Pajak Penghasilan" : "Pajak Barang Mewah") {}
 
@@ -70,6 +71,11 @@ int TaxTile::calculateWealth(const Player& player) const{
     int wealth = player.getMoney();
 
     for (const Property* prop : player.getOwnedProperties()){
+        if (!prop) {
+            throw GameException("Null property found in owned properties of '"
+                + player.getUsername() + "'.");
+        }
+
         wealth += prop->getPurchasePrice();
 
         if (prop->getType() == PropertyType::STREET){

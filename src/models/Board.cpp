@@ -4,12 +4,23 @@
 #include "../../include/utils/GameException.hpp"
 
 
-void Board::validateIndex(int idx) const {}
+void Board::validateIndex(int idx) const {
+    if (tiles.empty()){
+        throw BoardEmptyException();
+    }
+}
 
-void Board::validateCode(const string& code) const {}
+void Board::validateCode(const string& code) const {
+    if (codeToIndex.find(code) == codeToIndex.end()){
+        throw TileNotFoundException(code);
+    }
+}
 
 
 void Board::addTile(unique_ptr<Tile> tile) {
+    if (!tile) {
+        throw NullTileException();
+    }
     const string code = tile->getCode();
     const int         idx  = static_cast<int>(tiles.size());
     codeToIndex[code] = idx;
