@@ -20,8 +20,8 @@
 // #include "../../include/core/TransactionLogger.hpp"
 // #include "../../include/core/SaveLoadManager.hpp"
 
-#include <iostream>
 #include <algorithm>
+#include <sstream>
 #include <stdexcept>
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -69,7 +69,10 @@ void GameEngine::setTransactionLogger(TransactionLogger* tl){ logger            
 // Lifecycle
 // ─────────────────────────────────────────────────────────────────────────────
 
-void GameEngine::startNewGame(int nPlayers, std::vector<std::string> names) {
+CommandResult GameEngine::startNewGame(int nPlayers, std::vector<std::string> names) {
+    CommandResult result;
+    result.commandName = "MULAI";
+
     for (Player* player : players) {
         delete player;
     }
@@ -90,9 +93,17 @@ void GameEngine::startNewGame(int nPlayers, std::vector<std::string> names) {
     if (cardManager) {
         cardManager->initializeDecks();
     }
+
+    result.addEvent(
+        GameEventType::SYSTEM,
+        UiTone::SUCCESS,
+        "Permainan Dimulai",
+        "Permainan baru berhasil dibuat untuk " + std::to_string(players.size()) + " pemain."
+    );
+    return result;
 }
 
-void GameEngine::loadGame(const std::string& filename) {
+CommandResult GameEngine::loadGame(const std::string& filename) {
     // TODO: Panggil SaveLoadManager::load(filename) saat Orang 4 selesai
     // TODO: Pulihkan board, players, turnManager, dan state manager lain
     (void)filename;
@@ -106,14 +117,120 @@ void GameEngine::run() {
     }
 }
 
-void GameEngine::processCommand(const Command& cmd) {
-    // TODO: Dispatch ke handler berdasarkan cmd.type
-    // Contoh switch akan ditambahkan saat Command & enum CommandType sudah ada (Orang 5)
-    (void)cmd;
-    throw GameException("processCommand: belum diimplementasikan (menunggu Command/CommandType)");
+CommandResult GameEngine::processCommand(const Command& cmd) {
+    CommandResult result;
+
+    switch (cmd.type) {
+    case CommandType::HELP:
+        result.commandName = "BANTUAN";
+        result.addEvent(
+            GameEventType::SYSTEM,
+            UiTone::INFO,
+            "Daftar Perintah",
+            "LEMPAR_DADU, ATUR_DADU X Y, CETAK_PAPAN, CETAK_LOG [N], SIMPAN <file>, MUAT <file>, AKHIRI_GILIRAN, KELUAR"
+        );
+        return result;
+
+    case CommandType::ROLL_DICE: {
+        result.commandName = "LEMPAR_DADU";
+        const std::pair<int, int> roll = dice.rollRandom();
+        result.addEvent(
+            GameEventType::DICE,
+            UiTone::INFO,
+            "Hasil Dadu",
+            std::to_string(roll.first) + " + " + std::to_string(roll.second) + " = " + std::to_string(dice.getTotal())
+        );
+        result.append(moveCurrentPlayer(dice.getTotal()));
+        return result;
+    }
+
+    case CommandType::SET_DICE: {
+        result.commandName = "ATUR_DADU";
+        if (cmd.args.size() < 2) {
+            throw GameException("ATUR_DADU membutuhkan 2 argumen angka.");
+        }
+
+        int d1 = 0;
+        int d2 = 0;
+        try {
+            d1 = std::stoi(cmd.args[0]);
+            d2 = std::stoi(cmd.args[1]);
+        } catch (const std::exception&) {
+            throw GameException("Argumen ATUR_DADU harus berupa angka bulat.");
+        }
+
+        const std::pair<int, int> roll = dice.setManual(d1, d2);
+        result.addEvent(
+            GameEventType::DICE,
+            UiTone::INFO,
+            "Dadu Manual",
+            std::to_string(roll.first) + " + " + std::to_string(roll.second) + " = " + std::to_string(dice.getTotal())
+        );
+        result.append(moveCurrentPlayer(dice.getTotal()));
+        return result;
+    }
+
+    case CommandType::SAVE:
+        result.commandName = "SIMPAN";
+        result.addEvent(
+            GameEventType::SAVE_LOAD,
+            UiTone::WARNING,
+            "Belum Diimplementasikan",
+            "Fitur SIMPAN akan diaktifkan setelah integrasi SaveLoadManager selesai."
+        );
+        return result;
+
+    case CommandType::LOAD:
+        result.commandName = "MUAT";
+        throw GameException("MUAT belum diimplementasikan di fase ini.");
+
+    case CommandType::PRINT_LOG:
+        result.commandName = "CETAK_LOG";
+        result.addEvent(
+            GameEventType::LOG,
+            UiTone::INFO,
+            "Cetak Log",
+            "Render log transaksi ditangani oleh layer UI (views)."
+        );
+        return result;
+
+    case CommandType::PRINT_BOARD:
+        result.commandName = "CETAK_PAPAN";
+        result.addEvent(
+            GameEventType::SYSTEM,
+            UiTone::INFO,
+            "Cetak Papan",
+            "Papan akan dirender oleh BoardRenderer pada layer UI."
+        );
+        return result;
+
+    case CommandType::END_TURN:
+        result.commandName = "AKHIRI_GILIRAN";
+        return executeTurn();
+
+    case CommandType::START_GAME:
+        return startNewGame(2, {"Pemain1", "Pemain2"});
+
+    case CommandType::EXIT:
+        result.commandName = "KELUAR";
+        result.addEvent(
+            GameEventType::SYSTEM,
+            UiTone::INFO,
+            "Keluar",
+            "Permainan ditutup oleh pemain."
+        );
+        return result;
+
+    case CommandType::UNKNOWN:
+    default:
+        throw GameException("Perintah tidak dikenali: " + cmd.raw);
+    }
 }
 
-void GameEngine::executeTurn() {
+CommandResult GameEngine::executeTurn() {
+    CommandResult result;
+    result.commandName = "AKHIRI_GILIRAN";
+
     if (players.empty()) {
         throw GameException("executeTurn: tidak ada pemain aktif");
     }
@@ -121,27 +238,76 @@ void GameEngine::executeTurn() {
     Player& current = getCurrentPlayer();
     if (cardManager) {
         cardManager->drawSkillCard(current);
+        result.addEvent(
+            GameEventType::CARD,
+            UiTone::INFO,
+            "Kartu Kemampuan",
+            current.getUsername() + " mendapatkan 1 kartu kemampuan acak."
+        );
     }
 
     checkWinCondition();
+    if (gameOver) {
+        result.addEvent(
+            GameEventType::GAME_OVER,
+            UiTone::SUCCESS,
+            "Permainan Selesai",
+            "Kondisi kemenangan telah terpenuhi."
+        );
+        return result;
+    }
+
     turnManager.nextPlayer(buildBankruptFlags());
+    result.addEvent(
+        GameEventType::TURN,
+        UiTone::INFO,
+        "Giliran Berikutnya",
+        "Sekarang giliran " + getCurrentPlayer().getUsername() + "."
+    );
+    return result;
 }
 
-void GameEngine::moveCurrentPlayer(int steps) {
+CommandResult GameEngine::moveCurrentPlayer(int steps) {
+    CommandResult result;
+    result.commandName = "PINDAH";
+
     if (!board) {
         throw GameException("moveCurrentPlayer: board belum diinisialisasi");
+    }
+    if (board->size() <= 0) {
+        throw GameException("moveCurrentPlayer: papan belum memiliki petak.");
     }
 
     Player& player = getCurrentPlayer();
     const int oldPos = player.getPosition();
     player.move(steps, board->size());
 
+    result.addEvent(
+        GameEventType::MOVEMENT,
+        UiTone::INFO,
+        "Pergerakan",
+        player.getUsername() + " maju " + std::to_string(steps) + " petak."
+    );
+
     if (player.getPosition() < oldPos) {
         awardPassGoSalary(player);
+        result.addEvent(
+            GameEventType::MONEY,
+            UiTone::SUCCESS,
+            "Lewat GO",
+            player.getUsername() + " menerima gaji GO sebesar M" + std::to_string(goSalary) + "."
+        );
     }
 
     Tile& landing = board->getTileByIndex(player.getPosition());
+    result.addEvent(
+        GameEventType::LANDING,
+        UiTone::INFO,
+        "Mendarat",
+        "Bidak mendarat di " + landing.getName() + " (" + landing.getCode() + ")."
+    );
     handleLanding(player, landing);
+    return result;
 }
 
 void GameEngine::handleLanding(Player& p, Tile& t) {
@@ -201,6 +367,10 @@ std::vector<Player*> GameEngine::getActivePlayers() const {
         }
     }
     return active;
+}
+
+const std::vector<Player*>& GameEngine::getPlayers() const {
+    return players;
 }
 
 Board& GameEngine::getBoard() {

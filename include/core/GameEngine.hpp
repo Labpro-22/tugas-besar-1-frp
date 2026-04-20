@@ -4,13 +4,14 @@
 #include <memory>
 #include "../../include/models/Dice.hpp"
 #include "../../include/core/TurnManager.hpp"
+#include "../../include/core/Command.hpp"
+#include "../../include/core/CommandResult.hpp"
 using namespace std;
 
 class Player;
 class Board;
 class Tile;
 class Property;
-class Command;
 class Bank;
 class AuctionManager;
 class BankruptcyManager;
@@ -61,12 +62,12 @@ class GameEngine{
         void setTransactionLogger(TransactionLogger* tl);
 
         //Siklus permainan
-        void startNewGame(int nPlayers, vector<string> names);
-        void loadGame(const string& filename);
+        CommandResult startNewGame(int nPlayers, vector<string> names);
+        CommandResult loadGame(const string& filename);
         void run();
-        void processCommand(const Command& cmd);
-        void executeTurn();
-        void moveCurrentPlayer(int steps);
+        CommandResult processCommand(const Command& cmd);
+        CommandResult executeTurn();
+        CommandResult moveCurrentPlayer(int steps);
         void handleLanding(Player& p, Tile& t);
         void checkWinCondition();
         void endGame();
@@ -75,6 +76,7 @@ class GameEngine{
         Player& getCurrentPlayer();
         Player* getPlayerByName(const string& name);
         vector<Player*> getActivePlayers() const;
+        const vector<Player*>& getPlayers() const;
     
         // Getter untuk Manager lain yang perlu mengakses engine
         Board& getBoard();
