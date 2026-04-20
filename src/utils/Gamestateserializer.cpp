@@ -1,4 +1,4 @@
-#include "../../include/utils/GameStateSerializer.hpp"
+#include "../../include/utils/Gamestateserializer.hpp"
 #include "../../include/utils/GameException.hpp"
 #include <sstream>
 
@@ -96,7 +96,7 @@ void GameSnapshot::addProperty(const SavedPropertyState& p) { properties.push_ba
 void GameSnapshot::addLogEntry(const SavedLogEntry& entry) { log.push_back(entry); }
 
 /*
-GameStateSerializer — SERIALIZE
+Gamestateserializer — SERIALIZE
 
 Format output (sesuai spesifikasi):
 
@@ -118,15 +118,15 @@ Format output (sesuai spesifikasi):
 <TURN> <USERNAME> <JENIS_AKSI> <DETAIL>
 ...
 */
-string GameStateSerializer::serialize(const GameEngine& /*engine*/) const {
+string Gamestateserializer::serialize(const GameEngine& /*engine*/) const {
     throw SaveLoadException("serialize(GameEngine) belum diimplementasikan — menunggu GameEngine penuh");
 }
 
-string GameStateSerializer::serializeHeader(int currentTurn, int maxTurn, int numPlayers) const { 
+string Gamestateserializer::serializeHeader(int currentTurn, int maxTurn, int numPlayers) const { 
     return to_string(currentTurn) + " " + to_string(maxTurn) + "\n" + to_string(numPlayers); 
 }
 
-string GameStateSerializer::serializeCard(const SavedCardState& card) const {
+string Gamestateserializer::serializeCard(const SavedCardState& card) const {
     string line = card.getType();
     if (!card.getValue().empty()) {
         line += " " + card.getValue();
@@ -137,7 +137,7 @@ string GameStateSerializer::serializeCard(const SavedCardState& card) const {
     return line;
 }
 
-string GameStateSerializer::serializePlayer(const SavedPlayerState& p) const {
+string Gamestateserializer::serializePlayer(const SavedPlayerState& p) const {
     ostringstream out;
     out << p.getUsername()     << " "
         << p.getMoney()        << " "
@@ -150,7 +150,7 @@ string GameStateSerializer::serializePlayer(const SavedPlayerState& p) const {
     return out.str();
 }
 
-string GameStateSerializer::serializeTurnOrder(const vector<string>& order, const string& activePlayer) const {
+string Gamestateserializer::serializeTurnOrder(const vector<string>& order, const string& activePlayer) const {
     ostringstream out;
     for (size_t i = 0; i < order.size(); ++i) {
         if (i > 0) out << " ";
@@ -160,7 +160,7 @@ string GameStateSerializer::serializeTurnOrder(const vector<string>& order, cons
     return out.str();
 }
 
-string GameStateSerializer::serializeProperties(
+string Gamestateserializer::serializeProperties(
         const vector<SavedPropertyState>& props) const {
     ostringstream out;
     out << props.size();
@@ -177,7 +177,7 @@ string GameStateSerializer::serializeProperties(
     return out.str();
 }
 
-string GameStateSerializer::serializeDeck(const SavedDeckState& deck) const {
+string Gamestateserializer::serializeDeck(const SavedDeckState& deck) const {
     ostringstream out;
     out << deck.getCardTypes().size();
     for (const string& type : deck.getCardTypes()) {
@@ -186,7 +186,7 @@ string GameStateSerializer::serializeDeck(const SavedDeckState& deck) const {
     return out.str();
 }
 
-string GameStateSerializer::serializeLog(
+string Gamestateserializer::serializeLog(
         const vector<SavedLogEntry>& log) const {
     ostringstream out;
     out << log.size();
@@ -200,9 +200,9 @@ string GameStateSerializer::serializeLog(
     return out.str();
 }
 
-// GameStateSerializer — DESERIALIZE
+// Gamestateserializer — DESERIALIZE
 
-GameSnapshot GameStateSerializer::deserialize(const string& content) const {
+GameSnapshot Gamestateserializer::deserialize(const string& content) const {
     istringstream ss(content);
     GameSnapshot snap;
 
@@ -272,7 +272,7 @@ GameSnapshot GameStateSerializer::deserialize(const string& content) const {
     return snap;
 }
 
-SavedPlayerState GameStateSerializer::parsePlayer(istringstream& ss) const {
+SavedPlayerState Gamestateserializer::parsePlayer(istringstream& ss) const {
     SavedPlayerState p;
 
     string playerLine;
@@ -322,7 +322,7 @@ SavedPlayerState GameStateSerializer::parsePlayer(istringstream& ss) const {
     return p;
 }
 
-SavedPropertyState GameStateSerializer::parseProperty(istringstream& ss) const {
+SavedPropertyState Gamestateserializer::parseProperty(istringstream& ss) const {
     string propLine;
     getline(ss, propLine);
     istringstream ls(propLine);
@@ -352,7 +352,7 @@ SavedPropertyState GameStateSerializer::parseProperty(istringstream& ss) const {
                               festivalMult, festivalDur, buildings);
 }
 
-SavedDeckState GameStateSerializer::parseDeck(istringstream& ss) const {
+SavedDeckState Gamestateserializer::parseDeck(istringstream& ss) const {
     SavedDeckState deck;
     int numCards = 0;
     ss >> numCards;
@@ -374,7 +374,7 @@ SavedDeckState GameStateSerializer::parseDeck(istringstream& ss) const {
     return deck;
 }
 
-SavedLogEntry GameStateSerializer::parseLogEntry(istringstream& ss) const {
+SavedLogEntry Gamestateserializer::parseLogEntry(istringstream& ss) const {
     string line;
     if (!getline(ss, line)) {
         throw SaveLoadException("Incomplete log row");
@@ -393,7 +393,7 @@ SavedLogEntry GameStateSerializer::parseLogEntry(istringstream& ss) const {
     return SavedLogEntry(turn, username, actionType, detail);
 }
 
-string GameStateSerializer::nextToken(istringstream& ss, const string& fieldName) const {
+string Gamestateserializer::nextToken(istringstream& ss, const string& fieldName) const {
     string token;
     if (!(ss >> token)) {
         throw SaveLoadException("Field '" + fieldName +

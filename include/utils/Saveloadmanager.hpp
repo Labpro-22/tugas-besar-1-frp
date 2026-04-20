@@ -1,7 +1,7 @@
 #pragma once
 
 #include <string>
-#include "GameStateSerializer.hpp"
+#include "Gamestateserializer.hpp"
 using namespace std;
 
 class GameEngine;
@@ -9,16 +9,16 @@ class GameEngine;
 
 /*
 Bertanggung jawab membuka/menutup file .txt dan menjembatani antara
-GameEngine dengan GameStateSerializer.
+GameEngine dengan Gamestateserializer.
 
 Single Responsibility:
   - SaveLoadManager  → urusan FILE (buka, baca, tulis, tutup, validasi path)
-  - GameStateSerializer → urusan FORMAT (encode/decode isi file)
+  - Gamestateserializer → urusan FORMAT (encode/decode isi file)
 */
 
 class SaveLoadManager {
     private:
-        GameStateSerializer serializer;
+        Gamestateserializer serializer;
 
         // Validasi: ekstensi harus .txt, path tidak boleh kosong
         void validatePath(const std::string& filename) const;

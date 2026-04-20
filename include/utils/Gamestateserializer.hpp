@@ -194,7 +194,7 @@ public:
 // Bertanggung jawab mengubah state game menjadi teks (serialize)
 // dan sebaliknya (deserialize). Tidak membuka/menutup file.
 
-class GameStateSerializer {
+class Gamestateserializer {
 public:
     string  serialize(const GameEngine& engine) const;
     string  serializeHeader(int currentTurn, int maxTurn,
