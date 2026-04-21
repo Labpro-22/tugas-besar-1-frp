@@ -1,6 +1,25 @@
-#include "../../include/utils/GameStateSerializer.hpp"
+#include "../../include/utils/Gamestateserializer.hpp"
 #include "../../include/utils/GameException.hpp"
 #include <sstream>
+
+namespace {
+string trim(const string& s) {
+    const size_t start = s.find_first_not_of(" \t\r\n");
+    if (start == string::npos) return "";
+    const size_t end = s.find_last_not_of(" \t\r\n");
+    return s.substr(start, end - start + 1);
+}
+
+bool isJailedStatus(const string& status) {
+    // Support JAILED and JAILED_<N> (permitted in QnA for save format extension)
+    if (status == "JAILED") return true;
+    return status.rfind("JAILED_", 0) == 0;
+}
+
+bool isBlankLine(const string& line) {
+    return trim(line).empty();
+}
+}
 
 //SavedCardState
 SavedCardState::SavedCardState(const string& type, const string& value, const string& duration) : type(type), value(value), duration(duration) {}
@@ -118,8 +137,28 @@ Format output (sesuai spesifikasi):
 <TURN> <USERNAME> <JENIS_AKSI> <DETAIL>
 ...
 */
-string GameStateSerializer::serialize(const GameEngine& /*engine*/) const {
-    throw SaveLoadException("serialize(GameEngine) belum diimplementasikan — menunggu GameEngine penuh");
+string GameStateSerializer::serialize(const GameSnapshot& snapshot) const {
+    ostringstream out;
+
+    out << serializeHeader(snapshot.getCurrentTurn(),
+                           snapshot.getMaxTurn(),
+                           snapshot.getNumPlayers())
+        << "\n";
+
+    for (size_t i = 0; i < snapshot.getPlayers().size(); ++i) {
+        out << serializePlayer(snapshot.getPlayers()[i]);
+        out << "\n";
+    }
+
+    out << serializeTurnOrder(snapshot.getTurnOrder(),
+                              snapshot.getActivePlayer())
+        << "\n";
+
+    out << serializeProperties(snapshot.getProperties()) << "\n";
+    out << serializeDeck(snapshot.getDeck()) << "\n";
+    out << serializeLog(snapshot.getLog());
+
+    return out.str();
 }
 
 string GameStateSerializer::serializeHeader(int currentTurn, int maxTurn, int numPlayers) const { 
@@ -229,23 +268,39 @@ GameSnapshot GameStateSerializer::deserialize(const string& content) const {
 
     string orderLine;
     getline(ss, orderLine);
+    while (isBlankLine(orderLine) && ss.good()) {
+        getline(ss, orderLine);
+    }
     istringstream orderStream(orderLine);
     string name;
     while (orderStream >> name) {
         snap.addTurnOrder(name);
     }
-    if (snap.getTurnOrder().empty()) {
-        throw SaveLoadException("Turn order not found");
+    if (snap.getTurnOrder().size() != static_cast<size_t>(numPlayers)) {
+        throw SaveLoadException("Turn order count mismatch with number of players");
     }
 
     string activeLine;
     getline(ss, activeLine);
-    size_t start = activeLine.find_first_not_of(" \t\r\n");
-    size_t end   = activeLine.find_last_not_of(" \t\r\n");
-    if (start == string::npos) {
+    while (isBlankLine(activeLine) && ss.good()) {
+        getline(ss, activeLine);
+    }
+    const string activePlayer = trim(activeLine);
+    if (activePlayer.empty()) {
         throw SaveLoadException("Active turn not found");
     }
-    snap.setActivePlayer(activeLine.substr(start, end - start + 1));
+    snap.setActivePlayer(activePlayer);
+
+    bool activeInOrder = false;
+    for (const string& orderedName : snap.getTurnOrder()) {
+        if (orderedName == activePlayer) {
+            activeInOrder = true;
+            break;
+        }
+    }
+    if (!activeInOrder) {
+        throw SaveLoadException("Active player is not in turn order");
+    }
 
     int numProperties = 0;
     ss >> numProperties;
@@ -277,6 +332,9 @@ SavedPlayerState GameStateSerializer::parsePlayer(istringstream& ss) const {
 
     string playerLine;
     getline(ss, playerLine);
+    while (isBlankLine(playerLine) && ss.good()) {
+        getline(ss, playerLine);
+    }
     istringstream ls(playerLine);
 
     string username, positionCode, status;
@@ -285,7 +343,7 @@ SavedPlayerState GameStateSerializer::parsePlayer(istringstream& ss) const {
     if (ls.fail()) {
         throw SaveLoadException("Invalid player row: " + playerLine);
     }
-    if (status != "ACTIVE" && status != "JAILED" && status != "BANKRUPT") {
+    if (status != "ACTIVE" && status != "BANKRUPT" && !isJailedStatus(status)) {
         throw SaveLoadException("Invalid player status: " + status);
     }
     p.setUsername(username);
@@ -303,6 +361,9 @@ SavedPlayerState GameStateSerializer::parsePlayer(istringstream& ss) const {
     for (int i = 0; i < numCards; ++i) {
         string cardLine;
         getline(ss, cardLine);
+        while (isBlankLine(cardLine) && ss.good()) {
+            getline(ss, cardLine);
+        }
         istringstream cs(cardLine);
 
         SavedCardState card;
@@ -325,6 +386,9 @@ SavedPlayerState GameStateSerializer::parsePlayer(istringstream& ss) const {
 SavedPropertyState GameStateSerializer::parseProperty(istringstream& ss) const {
     string propLine;
     getline(ss, propLine);
+    while (isBlankLine(propLine) && ss.good()) {
+        getline(ss, propLine);
+    }
     istringstream ls(propLine);
 
     string code, type, owner, status, buildings;
@@ -336,7 +400,11 @@ SavedPropertyState GameStateSerializer::parseProperty(istringstream& ss) const {
     if (type != "street" && type != "railroad" && type != "utility") {
         throw SaveLoadException("Invalid property type: " + type);
     }
-    if (festivalMult != 1 && festivalMult != 2 &&
+    if (status != "BANK" && status != "OWNED" && status != "MORTGAGED") {
+        throw SaveLoadException("Invalid property status for " + code + ": " + status);
+    }
+    // Accept 0 for backward compatibility; serializer should emit 1 when inactive.
+    if (festivalMult != 0 && festivalMult != 1 && festivalMult != 2 &&
         festivalMult != 4 && festivalMult != 8) {
         throw SaveLoadException("Invalid FMULT for property " + code);
     }
@@ -348,8 +416,13 @@ SavedPropertyState GameStateSerializer::parseProperty(istringstream& ss) const {
         throw SaveLoadException("Invalid N_BANGUNAN for property " + code);
     }
 
+    if (type != "street" && buildings != "0") {
+        throw SaveLoadException("Non-street property must have N_BANGUNAN=0 for " + code);
+    }
+
     return SavedPropertyState(code, type, owner, status,
-                              festivalMult, festivalDur, buildings);
+                              festivalMult == 0 ? 1 : festivalMult,
+                              festivalDur, buildings);
 }
 
 SavedDeckState GameStateSerializer::parseDeck(istringstream& ss) const {
@@ -378,6 +451,11 @@ SavedLogEntry GameStateSerializer::parseLogEntry(istringstream& ss) const {
     string line;
     if (!getline(ss, line)) {
         throw SaveLoadException("Incomplete log row");
+    }
+    while (isBlankLine(line) && ss.good()) {
+        if (!getline(ss, line)) {
+            throw SaveLoadException("Incomplete log row");
+        }
     }
     istringstream ls(line);
     int turn = 0;

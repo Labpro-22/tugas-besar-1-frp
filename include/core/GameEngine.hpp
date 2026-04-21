@@ -19,6 +19,7 @@ class CardManager;
 class EffectManager;
 class TransactionLogger;
 class SaveLoadManager;
+class GameSnapshot;
 
 class GameEngine{
     private:
@@ -93,5 +94,9 @@ class GameEngine{
         int getGoSalary() const;
         int getJailFine() const;
         int getCurrentTurn() const;
+
+        // Snapshot boundary for save/load.
+        GameSnapshot createSnapshot() const;
+        void applySnapshot(const GameSnapshot& snapshot);
 
 };
