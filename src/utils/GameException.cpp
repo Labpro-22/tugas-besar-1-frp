@@ -1,4 +1,5 @@
 #include "../../include/models/GameContext.hpp"
+#include "../../include/utils/GameException.hpp"
 
 GameContext::GameContext(const std::vector<Player*>& allPlayers,
                          const Board* board, int diceTotal) : allPlayers_(allPlayers), board_(board), diceTotal_(diceTotal) {}
