@@ -42,11 +42,20 @@ struct PromptRequest {
     bool required = true;
 };
 
+struct MovementPayload {
+    int playerIndex = -1;
+    std::string playerName;
+    int fromIndex = -1;
+    int toIndex = -1;
+    std::vector<int> path;
+};
+
 struct CommandResult {
     bool success = true;
     std::string commandName;
     std::vector<GameEvent> events;
     std::optional<PromptRequest> prompt;
+    std::optional<MovementPayload> movement;
 
     void addEvent(GameEventType type,
                   UiTone tone,
@@ -62,6 +71,9 @@ struct CommandResult {
         }
         if (other.prompt.has_value()) {
             prompt = other.prompt;
+        }
+        if (other.movement.has_value()) {
+            movement = other.movement;
         }
     }
 };

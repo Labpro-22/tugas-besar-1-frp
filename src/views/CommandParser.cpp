@@ -17,6 +17,7 @@ CommandType CommandParser::resolveType(const std::string& token) const {
     if (token == "KELUAR" || token == "EXIT") return CommandType::EXIT;
     if (token == "MULAI") return CommandType::START_GAME;
     if (token == "LEMPAR_DADU") return CommandType::ROLL_DICE;
+    if (token == "PILIH_BUANG_KARTU") return CommandType::RESOLVE_SKILL_DROP;
     if (token == "ATUR_DADU") return CommandType::SET_DICE;
     if (token == "CETAK_PAPAN") return CommandType::PRINT_BOARD;
     if (token == "CETAK_LOG") return CommandType::PRINT_LOG;

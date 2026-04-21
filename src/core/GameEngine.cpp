@@ -156,8 +156,40 @@ CommandResult GameEngine::processCommand(const Command& cmd) {
 
     auto resolveDiceFlow = [&](CommandResult& flowResult) {
         Player& current = getCurrentPlayer();
+        const int movingPlayerIndex = turnManager.getCurrentPlayerIndex();
+        const std::string movingPlayerName = current.getUsername();
         const bool rolledDouble = dice.isDouble();
         const int total = dice.getTotal();
+
+        auto buildMovementPath = [&](int fromIndex, int steps, int finalIndex) {
+            if (!board || board->size() <= 0 || steps <= 0) {
+                return;
+            }
+
+            std::vector<int> path;
+            path.reserve(static_cast<size_t>(steps) + 1);
+            const int boardSize = board->size();
+
+            for (int i = 1; i <= steps; ++i) {
+                path.push_back((fromIndex + i) % boardSize);
+            }
+
+            if (finalIndex >= 0 && !path.empty() && finalIndex != path.back()) {
+                path.push_back(finalIndex);
+            }
+
+            if (path.empty()) {
+                return;
+            }
+
+            flowResult.movement = MovementPayload{
+                movingPlayerIndex,
+                movingPlayerName,
+                fromIndex,
+                finalIndex,
+                path
+            };
+        };
 
         // Alur pemain yang sedang berada di penjara.
         if (current.isJailed()) {
@@ -211,7 +243,9 @@ CommandResult GameEngine::processCommand(const Command& cmd) {
                     current.getUsername() +
                         " mendapatkan double dan keluar dari penjara.");
 
+                const int oldPos = current.getPosition();
                 flowResult.append(moveCurrentPlayer(total));
+                buildMovementPath(oldPos, total, current.getPosition());
                 current.resetConsecutiveDoubles();
                 flowResult.append(executeTurn());
                 return;
@@ -245,7 +279,9 @@ CommandResult GameEngine::processCommand(const Command& cmd) {
             current.resetConsecutiveDoubles();
         }
 
+        const int oldPos = current.getPosition();
         flowResult.append(moveCurrentPlayer(total));
+        buildMovementPath(oldPos, total, current.getPosition());
 
         if (current.isJailed()) {
             current.resetConsecutiveDoubles();
@@ -273,7 +309,7 @@ CommandResult GameEngine::processCommand(const Command& cmd) {
             GameEventType::SYSTEM,
             UiTone::INFO,
             "Daftar Perintah",
-            "LEMPAR_DADU, ATUR_DADU X Y, CETAK_PAPAN, CETAK_LOG [N], SIMPAN <file>, MUAT <file>, KELUAR"
+            "LEMPAR_DADU, PILIH_BUANG_KARTU <index_0_3>, ATUR_DADU X Y, CETAK_PAPAN, CETAK_LOG [N], SIMPAN <file>, MUAT <file>, KELUAR"
         );
         return result;
 
@@ -287,6 +323,37 @@ CommandResult GameEngine::processCommand(const Command& cmd) {
             std::to_string(roll.first) + " + " + std::to_string(roll.second) + " = " + std::to_string(dice.getTotal())
         );
         resolveDiceFlow(result);
+        return result;
+    }
+
+    case CommandType::RESOLVE_SKILL_DROP: {
+        result.commandName = "PILIH_BUANG_KARTU";
+        if (!cardManager) {
+            throw GameException("CardManager belum di-inject untuk menyelesaikan pending kartu skill.");
+        }
+
+        Player& current = getCurrentPlayer();
+        if (!cardManager->hasPendingSkillDrop(current)) {
+            throw GameException("Tidak ada pending kartu skill untuk pemain saat ini.");
+        }
+
+        if (cmd.args.empty()) {
+            throw GameException("PILIH_BUANG_KARTU membutuhkan argumen index 0..3.");
+        }
+
+        int discardIndex = -1;
+        try {
+            discardIndex = std::stoi(cmd.args[0]);
+        } catch (const std::exception&) {
+            throw GameException("Argumen PILIH_BUANG_KARTU harus berupa angka 0..3.");
+        }
+
+        cardManager->resolvePendingSkillDrop(current, discardIndex);
+        result.addEvent(
+            GameEventType::CARD,
+            UiTone::SUCCESS,
+            "Kartu Skill",
+            current.getUsername() + " telah menyelesaikan pemilihan kartu yang dibuang.");
         return result;
     }
 
@@ -391,12 +458,28 @@ CommandResult GameEngine::executeTurn() {
     Player& current = getCurrentPlayer();
     if (cardManager && !current.isBankrupt()) {
         cardManager->drawSkillCard(current);
-        result.addEvent(
-            GameEventType::CARD,
-            UiTone::INFO,
-            "Kartu Kemampuan",
-            current.getUsername() + " mendapatkan 1 kartu kemampuan acak."
-        );
+        if (cardManager->hasPendingSkillDrop(current)) {
+            result.addEvent(
+                GameEventType::CARD,
+                UiTone::WARNING,
+                "Kartu Kemampuan",
+                current.getUsername() + " harus memilih 1 kartu untuk dibuang (maksimal 3 kartu di tangan)."
+            );
+
+            PromptRequest prompt;
+            prompt.key = "SKILL_DROP";
+            prompt.message = "Pilih index kartu yang dibuang (0..2 dari tangan, 3 = kartu baru).";
+            prompt.options = cardManager->getPendingSkillDropOptions(current);
+            prompt.required = true;
+            result.prompt = prompt;
+        } else {
+            result.addEvent(
+                GameEventType::CARD,
+                UiTone::INFO,
+                "Kartu Kemampuan",
+                current.getUsername() + " mendapatkan 1 kartu kemampuan acak."
+            );
+        }
     }
 
     checkWinCondition();
