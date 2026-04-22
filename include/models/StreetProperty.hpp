@@ -36,6 +36,7 @@ public:
     int getHouseCost()     const;
     int getHotelCost()     const;
     int getBuildingCount() const;
+    const std::vector<int>& getRentLevels() const;
  
 
 };

@@ -88,6 +88,34 @@ bool TurnManager::hasExtraTurn() const {
     return extraTurnGranted;
 }
 
+const vector<int>& TurnManager::getTurnOrder() const {
+    return turnOrder;
+}
+
+int TurnManager::getCurrentOrderIndex() const {
+    return currentIndex;
+}
+
+void TurnManager::restoreState(const vector<int>& order,
+                               int currentOrderIndex,
+                               int turnNumber,
+                               bool extraTurn) {
+    if (order.empty()) {
+        throw runtime_error("TurnManager::restoreState - turn order cannot be empty");
+    }
+    if (currentOrderIndex < 0 || currentOrderIndex >= static_cast<int>(order.size())) {
+        throw runtime_error("TurnManager::restoreState - current order index out of range");
+    }
+    if (turnNumber < 1) {
+        throw runtime_error("TurnManager::restoreState - turn number must be >= 1");
+    }
+
+    turnOrder = order;
+    currentIndex = currentOrderIndex;
+    currentTurnNumber = turnNumber;
+    extraTurnGranted = extraTurn;
+}
+
 int TurnManager::orderSize() const {
     return static_cast<int>(turnOrder.size());
 }

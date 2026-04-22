@@ -1,5 +1,6 @@
 #include "../../include/utils/Saveloadmanager.hpp"
 #include "../../include/utils/GameException.hpp"
+#include "../../include/core/GameEngine.hpp"
 
 #include <fstream>
 #include <sstream>
@@ -45,32 +46,19 @@ void SaveLoadManager::writeFile(const string& filename,
 
 // Save
 
+void SaveLoadManager::save(const GameEngine& engine,
+                            const string& filename) const {
+    const GameSnapshot snapshot = engine.createSnapshot();
+    save(snapshot, filename);
+}
+
 
 void SaveLoadManager::save(const GameSnapshot& snapshot,
                             const string& filename) const {
     validatePath(filename);
 
-    // Susun konten dari snapshot menggunakan serializer
-    ostringstream content;
-
-    content << serializer.serializeHeader(snapshot.getCurrentTurn(),
-                                          snapshot.getMaxTurn(),
-                                          snapshot.getNumPlayers())
-            << "\n";
-
-    for (const auto& player : snapshot.getPlayers()) {
-        content << serializer.serializePlayer(player) << "\n";
-    }
-
-    content << serializer.serializeTurnOrder(snapshot.getTurnOrder(),
-                                              snapshot.getActivePlayer())
-            << "\n";
-
-    content << serializer.serializeProperties(snapshot.getProperties()) << "\n";
-    content << serializer.serializeDeck(snapshot.getDeck())             << "\n";
-    content << serializer.serializeLog(snapshot.getLog());
-
-    writeFile(filename, content.str());
+    // SaveLoadManager hanya urus file; formatter sepenuhnya di serializer.
+    writeFile(filename, serializer.serialize(snapshot));
 }
 
 
@@ -81,4 +69,10 @@ GameSnapshot SaveLoadManager::load(const string& filename) const {
     validatePath(filename);
     const string content = readFile(filename);
     return serializer.deserialize(content);
+}
+
+void SaveLoadManager::loadInto(GameEngine& engine,
+                               const string& filename) const {
+    const GameSnapshot snapshot = load(filename);
+    engine.applySnapshot(snapshot);
 }

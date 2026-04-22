@@ -26,6 +26,8 @@ public:
     Tile&       getTileByCode(const std::string& code);
     const Tile& getTileByCode(const std::string& code) const;
 
+    bool hasTile(const std::string& code) const;
+
     int  getIndexOf(const std::string& code) const;
 
     int  size() const;

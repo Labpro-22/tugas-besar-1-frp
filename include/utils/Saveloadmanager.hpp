@@ -39,11 +39,17 @@ class SaveLoadManager {
         void save(const GameEngine& engine, const std::string& filename) const;
         Versi stub: terima snapshot langsung (untuk cicilan sebelum GameEngine penuh)
         */
+        void save(const GameEngine& engine, const std::string& filename) const;
+
+        // Compatibility overload: caller sudah punya snapshot.
         void save(const GameSnapshot& snapshot, const std::string& filename) const;
 
         // ── Load ──────────────────────────────────────────────────────────────────
         // Baca file lalu kembalikan GameSnapshot; GameEngine yang apply ke state-nya
         GameSnapshot load(const std::string& filename) const;
+
+        // Helper agar alur load lebih ringkas dari sisi engine caller.
+        void loadInto(GameEngine& engine, const std::string& filename) const;
 
         // Apply snapshot ke GameEngine (dipanggil setelah load())
         // TODO: implementasikan saat Player, Board, Property dari Orang 1 & 2 tersedia

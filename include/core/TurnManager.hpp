@@ -19,5 +19,11 @@ class TurnManager {
         void removePlayer(int playerIndex);
         void resetExtraTurn();
         bool hasExtraTurn() const;
+        const vector<int>& getTurnOrder() const;
+        int getCurrentOrderIndex() const;
+        void restoreState(const vector<int>& order,
+              int currentOrderIndex,
+              int turnNumber,
+              bool extraTurn = false);
         int orderSize() const;
 };

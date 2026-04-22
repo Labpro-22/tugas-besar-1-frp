@@ -196,7 +196,7 @@ public:
 
 class Gamestateserializer {
 public:
-    string  serialize(const GameEngine& engine) const;
+    string  serialize(const GameSnapshot& snapshot) const;
     string  serializeHeader(int currentTurn, int maxTurn,
                                  int numPlayers) const;
     string  serializePlayer(const SavedPlayerState& p) const;

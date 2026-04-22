@@ -1,6 +1,7 @@
 #include "../../include/core/CardManager.hpp"
 
 #include "../../include/core/GameEngine.hpp"
+#include "../../include/core/TransactionLogger.hpp"
 #include "../../include/models/ChanceCards.hpp"
 #include "../../include/models/CommunityCards.hpp"
 #include "../../include/models/Player.hpp"
@@ -61,6 +62,13 @@ void CardManager::drawChanceCard(Player& player, GameEngine& game) {
     if (!initialized) initializeDecks();
 
     std::shared_ptr<ActionCard> card = chanceDeck.draw();
+    game.pushEvent(GameEventType::CARD, UiTone::INFO,
+        "Kartu Kesempatan",
+        "Kamu mendarat di Kesempatan!\n"
+        "Pemain " + player.getUsername() + " mengambil kartu Kesempatan:\n\"" +
+            card->getDescription() + "\"");
+    game.getLogger().logDrawCard(player.getUsername(), "Kesempatan",
+                                 card->getDescription());
     card->apply(player, game);
     chanceDeck.discard(card);
 }
@@ -69,11 +77,18 @@ void CardManager::drawCommunityCard(Player& player, GameEngine& game) {
     if (!initialized) initializeDecks();
 
     std::shared_ptr<ActionCard> card = communityDeck.draw();
+    game.pushEvent(GameEventType::CARD, UiTone::INFO,
+        "Dana Umum",
+        "Kamu mendarat di Dana Umum!\n"
+        "Pemain " + player.getUsername() + " mengambil kartu Dana Umum:\n\"" +
+            card->getDescription() + "\"");
+    game.getLogger().logDrawCard(player.getUsername(), "Dana Umum",
+                                 card->getDescription());
     card->apply(player, game);
     communityDeck.discard(card);
 }
 
-void CardManager::drawSkillCard(Player& player) {
+std::shared_ptr<SkillCard> CardManager::drawSkillCard(Player& player) {
     if (!initialized) initializeDecks();
 
     if (hasPendingSkillDrop(player)) {
@@ -85,11 +100,12 @@ void CardManager::drawSkillCard(Player& player) {
 
     if (player.countCards() < 3) {
         player.addCard(drawn);
-        return;
+        return drawn;
     }
 
     // Tidak prompt di manager, simpan pending agar UI memutuskan kartu mana yang dibuang.
     pendingSkillDraw[player.getUsername()] = drawn;
+    return drawn;
 }
 
 bool CardManager::hasPendingSkillDrop(const Player& player) const {

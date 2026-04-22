@@ -97,10 +97,35 @@ private:
     int initialBalance;
 };
 
+class ActionTileDef {
+public:
+    ActionTileDef();
+
+    void setId(int id);
+    void setCode(const string& code);
+    void setName(const string& name);
+    void setTileKind(const string& tileKind);
+    void setColorGroup(const string& colorGroup);
+
+    int getId() const;
+    string getCode() const;
+    string getName() const;
+    string getTileKind() const;
+    string getColorGroup() const;
+
+private:
+    int id;
+    string code;
+    string name;
+    string tileKind;
+    string colorGroup;
+};
+
 //  baca file conf .txt dan ubah jadi class terstruktur
 class ConfigLoader {
 public:
     vector<PropertyDef> loadProperties(const string& path) const;
+    vector<ActionTileDef> loadActionTiles(const string& path) const;
     map<int,int> loadRailroadConfig(const string& path) const;
     map<int,int> loadUtilityConfig(const string& path) const;
 
@@ -112,6 +137,7 @@ private:
     // pecah baris teks jd token 
     vector<string> splitLine(const string& line) const;
     void validateProperties(const vector<PropertyDef>& defs) const;
+    void validateActionTiles(const vector<ActionTileDef>& defs) const;
     // trim whitespace di kiri dan kanan string
     string  trim(const string& s) const;
 };

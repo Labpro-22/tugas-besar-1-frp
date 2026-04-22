@@ -1,7 +1,8 @@
 #include "../../include/models/JailTile.hpp"
 #include "../../include/models/Player.hpp"
 
-JailTile::JailTile(int index) : Tile(index, "PEN", "Penjara") {}
+JailTile::JailTile(int index, const string& code, const string& name)
+    : Tile(index, code, name) {}
 
 int JailTile::countInmates(const vector<Player*>& players) const{
     int count = 0;

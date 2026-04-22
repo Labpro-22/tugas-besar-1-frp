@@ -119,7 +119,9 @@ public:
 // exception for Dice (cek nilai input dadu ketika setManual(), rentang [1,6])
 class InvalidDiceValueException : public GameException{
     public:
-        explicit InvalidDiceValueException(int value, int faces) : GameException("Invalid dice value: " + std::to_string(value) + ". Dice Value Must be between 1 and 6"){}
+        explicit InvalidDiceValueException(int value, int faces)
+            : GameException("Invalid dice value: " + std::to_string(value) +
+                            ". Dice value must be between 1 and " + std::to_string(faces)) {}
 };
 
 //exception for save/load
