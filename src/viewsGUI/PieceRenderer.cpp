@@ -4,7 +4,7 @@
 
 namespace viewsGUI {
 PieceRenderer::PieceRenderer(int playerId, sf::Color playerColor, sf::Vector2f startPos)
-    : m_isMoving(false), m_speed(360.0f) {
+    : m_useTokenSprite(false), m_isMoving(false), m_speed(360.0f) {
     m_shape.setRadius(12.0f);
     m_shape.setOrigin(12.0f, 12.0f);
     m_shape.setFillColor(playerColor);
@@ -17,6 +17,32 @@ PieceRenderer::PieceRenderer(int playerId, sf::Color playerColor, sf::Vector2f s
 
     m_currentPos = startPos + m_offset;
     m_shape.setPosition(m_currentPos);
+    m_tokenSprite.setPosition(m_currentPos);
+}
+
+bool PieceRenderer::loadTokenTexture(const std::string& texturePath) {
+    if (!m_tokenTexture.loadFromFile(texturePath)) {
+        m_useTokenSprite = false;
+        return false;
+    }
+
+    const sf::Vector2u textureSize = m_tokenTexture.getSize();
+    if (textureSize.x <= 2 || textureSize.y <= 2) {
+        // Placeholder 1x1/2x2 should not override fallback piece shape.
+        m_useTokenSprite = false;
+        return false;
+    }
+
+    m_useTokenSprite = true;
+    m_tokenSprite.setTexture(m_tokenTexture);
+
+    const sf::FloatRect bounds = m_tokenSprite.getLocalBounds();
+    m_tokenSprite.setOrigin(bounds.width / 2.0f, bounds.height / 2.0f);
+    if (bounds.width > 0.0f && bounds.height > 0.0f) {
+        m_tokenSprite.setScale(28.0f / bounds.width, 28.0f / bounds.height);
+    }
+    m_tokenSprite.setPosition(m_currentPos);
+    return true;
 }
 
 void PieceRenderer::moveAlongPath(const std::vector<sf::Vector2f>& pathQueue) {
@@ -50,12 +76,20 @@ void PieceRenderer::update(sf::Time dt) {
     }
 
     m_shape.setPosition(m_currentPos);
+    m_tokenSprite.setPosition(m_currentPos);
 }
 
-void PieceRenderer::render(sf::RenderWindow& window) const { window.draw(m_shape); }
+void PieceRenderer::render(sf::RenderWindow& window) const {
+    if (m_useTokenSprite) {
+        window.draw(m_tokenSprite);
+        return;
+    }
+    window.draw(m_shape);
+}
 
 void PieceRenderer::snapTo(sf::Vector2f tileCenter) {
     m_currentPos = tileCenter + m_offset;
     m_shape.setPosition(m_currentPos);
+    m_tokenSprite.setPosition(m_currentPos);
 }
 } // namespace viewsGUI

@@ -48,10 +48,11 @@ constexpr unsigned int kTaxPriceMinSize = 6;
 } // namespace
 
 namespace viewsGUI {
-BoardRenderer::BoardRenderer(float boardSize, const sf::Font& font)
+BoardRenderer::BoardRenderer(float boardSize, const sf::Font& font, sf::Vector2f origin)
     : m_boardSize(boardSize),
-      m_cornerSize(90.0f),
-      m_tileSize(60.0f),
+      m_cornerSize(boardSize * (90.0f / 720.0f)),
+      m_tileSize((boardSize - (2.0f * (boardSize * (90.0f / 720.0f)))) / 9.0f),
+      m_origin(origin),
       m_defaultFont(font),
       m_hasBebasFont(false),
       m_renderCanvasesReady(false) {
@@ -72,7 +73,8 @@ bool BoardRenderer::loadAssets(const std::string& assetDirectory) {
         success = false;
     } else {
         m_centerSprite.setTexture(m_centerTexture);
-        m_centerSprite.setPosition(m_cornerSize + kCenterInset, m_cornerSize + kCenterInset);
+        m_centerSprite.setPosition(m_origin.x + m_cornerSize + kCenterInset,
+                                   m_origin.y + m_cornerSize + kCenterInset);
 
         const float centerAreaSize = m_boardSize - (2.0f * m_cornerSize);
         const float targetCenterSize = centerAreaSize - (2.0f * kCenterInset);
@@ -258,19 +260,19 @@ const sf::Texture* BoardRenderer::resolveBaseTexture(const Tile& tile) const {
 }
 
 sf::Vector2f BoardRenderer::getTilePosition(int index) const {
-    if (index == 0) return {m_boardSize - m_cornerSize, m_boardSize - m_cornerSize};
+    if (index == 0) return {m_origin.x + m_boardSize - m_cornerSize, m_origin.y + m_boardSize - m_cornerSize};
     if (index > 0 && index < 10)
-        return {m_boardSize - m_cornerSize - (index * m_tileSize), m_boardSize - m_cornerSize};
-    if (index == 10) return {0.0f, m_boardSize - m_cornerSize};
+        return {m_origin.x + m_boardSize - m_cornerSize - (index * m_tileSize), m_origin.y + m_boardSize - m_cornerSize};
+    if (index == 10) return {m_origin.x + 0.0f, m_origin.y + m_boardSize - m_cornerSize};
     if (index > 10 && index < 20)
-        return {0.0f, m_boardSize - m_cornerSize - ((index - 10) * m_tileSize)};
-    if (index == 20) return {0.0f, 0.0f};
+        return {m_origin.x + 0.0f, m_origin.y + m_boardSize - m_cornerSize - ((index - 10) * m_tileSize)};
+    if (index == 20) return {m_origin.x + 0.0f, m_origin.y + 0.0f};
     if (index > 20 && index < 30)
-        return {m_cornerSize + ((index - 21) * m_tileSize), 0.0f};
-    if (index == 30) return {m_boardSize - m_cornerSize, 0.0f};
+        return {m_origin.x + m_cornerSize + ((index - 21) * m_tileSize), m_origin.y + 0.0f};
+    if (index == 30) return {m_origin.x + m_boardSize - m_cornerSize, m_origin.y + 0.0f};
     if (index > 30 && index < 40)
-        return {m_boardSize - m_cornerSize, m_cornerSize + ((index - 31) * m_tileSize)};
-    return {0.0f, 0.0f};
+        return {m_origin.x + m_boardSize - m_cornerSize, m_origin.y + m_cornerSize + ((index - 31) * m_tileSize)};
+    return {m_origin.x + 0.0f, m_origin.y + 0.0f};
 }
 
 sf::Vector2f BoardRenderer::getTileSize(int index) const {
@@ -283,6 +285,10 @@ sf::Vector2f BoardRenderer::getTileCenter(int index) const {
     const sf::Vector2f pos = getTilePosition(index);
     const sf::Vector2f size = getTileSize(index);
     return {pos.x + (size.x / 2.0f), pos.y + (size.y / 2.0f)};
+}
+
+sf::Vector2f BoardRenderer::getBoardCenter() const {
+    return {m_origin.x + (m_boardSize / 2.0f), m_origin.y + (m_boardSize / 2.0f)};
 }
 
 bool BoardRenderer::isCornerIndex(int index) const {
@@ -545,7 +551,7 @@ void BoardRenderer::drawTileBorder(sf::RenderWindow& window, int index) const {
 void BoardRenderer::drawCenterBorder(sf::RenderWindow& window) const {
     const float centerSize = m_boardSize - (2.0f * m_cornerSize);
     sf::RectangleShape centerBorder({centerSize - 1.0f, centerSize - 1.0f});
-    centerBorder.setPosition(m_cornerSize + 0.5f, m_cornerSize + 0.5f);
+    centerBorder.setPosition(m_origin.x + m_cornerSize + 0.5f, m_origin.y + m_cornerSize + 0.5f);
     centerBorder.setFillColor(sf::Color::Transparent);
     centerBorder.setOutlineThickness(kCenterBorderThickness);
     centerBorder.setOutlineColor(kCenterBorderColor);
@@ -576,6 +582,7 @@ void BoardRenderer::drawTile(sf::RenderWindow& window, const Tile& tile, int ind
 
 void BoardRenderer::render(sf::RenderWindow& window, const Board& board) const {
     sf::RectangleShape boardBg({m_boardSize, m_boardSize});
+    boardBg.setPosition(m_origin);
     boardBg.setFillColor(sf::Color(245, 250, 245));
     window.draw(boardBg);
     window.draw(m_centerSprite);

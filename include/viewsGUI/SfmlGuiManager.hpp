@@ -9,8 +9,9 @@
 #include <vector>
 
 #include "../core/CommandResult.hpp"
-#include "ActionPanel.hpp"
 #include "BoardRenderer.hpp"
+#include "DiceRenderer.hpp"
+#include "MainUI.hpp"
 #include "PieceRenderer.hpp"
 #include "PopupBox.hpp"
 
@@ -26,13 +27,16 @@ public:
 
 private:
     sf::RenderWindow m_window;
+    sf::View m_baseView;
     GameEngine& m_engine;
 
     sf::Font m_mainFont;
+    sf::Font m_titleFont;
     GuiState m_currentState;
 
     std::unique_ptr<BoardRenderer> m_boardView;
-    std::unique_ptr<ActionPanel> m_actionPanel;
+    std::unique_ptr<MainUI> m_mainUi;
+    std::unique_ptr<DiceRenderer> m_diceRenderer;
     std::unique_ptr<PopupBox> m_popupBox;
     std::vector<std::unique_ptr<PieceRenderer>> m_players;
 
@@ -48,11 +52,10 @@ private:
     void refreshFromEngineState();
 
     bool loadFontWithFallback();
-    void setActionButtonsEnabled(bool enabled);
+    void updateLetterboxView(unsigned int windowWidth, unsigned int windowHeight);
+    void setUiInputEnabled(bool enabled);
 
     void submitRollDice();
-    void submitSave();
-    void submitLoad();
     void submitResolveSkillDrop(int discardIndex);
 
     void consumeResult(const CommandResult& result, bool syncPiecePositions);

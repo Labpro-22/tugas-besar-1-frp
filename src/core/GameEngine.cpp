@@ -354,6 +354,25 @@ CommandResult GameEngine::processCommand(const Command& cmd) {
             UiTone::SUCCESS,
             "Kartu Skill",
             current.getUsername() + " telah menyelesaikan pemilihan kartu yang dibuang.");
+
+        checkWinCondition();
+        if (gameOver) {
+            result.addEvent(
+                GameEventType::GAME_OVER,
+                UiTone::SUCCESS,
+                "Permainan Selesai",
+                "Kondisi kemenangan telah terpenuhi."
+            );
+            return result;
+        }
+
+        turnManager.nextPlayer(buildBankruptFlags());
+        result.addEvent(
+            GameEventType::TURN,
+            UiTone::INFO,
+            "Giliran Berikutnya",
+            "Sekarang giliran " + getCurrentPlayer().getUsername() + "."
+        );
         return result;
     }
 
@@ -472,6 +491,7 @@ CommandResult GameEngine::executeTurn() {
             prompt.options = cardManager->getPendingSkillDropOptions(current);
             prompt.required = true;
             result.prompt = prompt;
+            return result;
         } else {
             result.addEvent(
                 GameEventType::CARD,

@@ -32,6 +32,7 @@ GUI_OBJS := $(patsubst $(SRC_DIR)/%.cpp, $(OBJ_DIR)/%.o, $(GUI_SRCS))
 TEST_OBJS := $(patsubst $(SRC_DIR)/%.cpp, $(OBJ_DIR)/%.o, $(TEST_SRCS))
 GAME_OBJS_NO_MAIN := $(filter-out $(OBJ_DIR)/main.o, $(OBJS))
 TEST_TARGET := $(BIN_DIR)/tests
+DEPS := $(OBJS:.o=.d) $(GUI_OBJS:.o=.d) $(TEST_OBJS:.o=.d)
 
 # Main targets
 all: directories $(TARGET)
@@ -53,7 +54,7 @@ $(GUI_TARGET): $(GUI_OBJS)
 # Compile source files into object files
 $(OBJ_DIR)/%.o: $(SRC_DIR)/%.cpp
 	@mkdir -p $(dir $@)
-	$(CXX) $(CXXFLAGS) -c $< -o $@
+	$(CXX) $(CXXFLAGS) -MMD -MP -c $< -o $@
 
 # Run the game
 run: all
@@ -79,3 +80,5 @@ clean:
 rebuild: clean all
 
 .PHONY: all gui clean rebuild run run-gui test directories
+
+-include $(DEPS)

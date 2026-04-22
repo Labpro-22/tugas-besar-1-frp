@@ -4,12 +4,14 @@
 #include <SFML/Graphics.hpp>
 
 #include <queue>
+#include <string>
 #include <vector>
 
 namespace viewsGUI {
 class PieceRenderer {
 public:
     PieceRenderer(int playerId, sf::Color playerColor, sf::Vector2f startPos);
+    bool loadTokenTexture(const std::string& texturePath);
 
     void moveAlongPath(const std::vector<sf::Vector2f>& pathQueue);
     void update(sf::Time dt);
@@ -19,6 +21,9 @@ public:
     bool isMoving() const { return m_isMoving; }
 
 private:
+    sf::Texture m_tokenTexture;
+    sf::Sprite m_tokenSprite;
+    bool m_useTokenSprite;
     sf::CircleShape m_shape;
     sf::Vector2f m_currentPos;
     std::queue<sf::Vector2f> m_pathQueue;

@@ -16,7 +16,7 @@ class TaxTile;
 namespace viewsGUI {
 class BoardRenderer {
 public:
-    BoardRenderer(float boardSize, const sf::Font& font);
+    BoardRenderer(float boardSize, const sf::Font& font, sf::Vector2f origin = sf::Vector2f(0.0f, 0.0f));
 
     bool loadAssets(const std::string& assetDirectory);
 
@@ -25,6 +25,7 @@ public:
     sf::Vector2f getTilePosition(int index) const;
     sf::Vector2f getTileSize(int index) const;
     sf::Vector2f getTileCenter(int index) const;
+    sf::Vector2f getBoardCenter() const;
 
 private:
     struct TileRenderInfo {
@@ -38,6 +39,7 @@ private:
     float m_boardSize;
     float m_cornerSize;
     float m_tileSize;
+    sf::Vector2f m_origin;
     sf::Font m_defaultFont;
     sf::Font m_bebasFont;
     bool m_hasBebasFont;

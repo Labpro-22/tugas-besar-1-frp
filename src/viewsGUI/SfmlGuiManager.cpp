@@ -5,8 +5,10 @@
 #include "../../include/core/CommandResult.hpp"
 #include "../../include/core/GameEngine.hpp"
 #include "../../include/models/Board.hpp"
+#include "../../include/models/Dice.hpp"
 #include "../../include/models/Player.hpp"
 #include "../../include/utils/GameException.hpp"
+#include "../../include/viewsGUI/Layout1920.hpp"
 
 #include <algorithm>
 #include <array>
@@ -34,25 +36,45 @@ std::string buildMessageFromResult(const CommandResult& result) {
 
 namespace viewsGUI {
 SfmlGuiManager::SfmlGuiManager(GameEngine& engine)
-    : m_window(sf::VideoMode(1280, 720), "Nimonspoli GUI"),
+    : m_window(sf::VideoMode(static_cast<unsigned int>(Layout1920::kDesignWidth),
+                             static_cast<unsigned int>(Layout1920::kDesignHeight)),
+               "Nimonspoli GUI",
+               sf::Style::Default),
+      m_baseView(sf::FloatRect(0.0f, 0.0f, Layout1920::kDesignWidth, Layout1920::kDesignHeight)),
       m_engine(engine),
       m_currentState(GuiState::IDLE),
-            m_lastMessage("Siap memulai game.") {
+      m_lastMessage("Siap memulai game.") {
     if (!loadFontWithFallback()) {
         throw std::runtime_error("Gagal memuat font GUI. Pastikan assets/fonts atau font sistem tersedia.");
     }
 
-    m_boardView = std::make_unique<BoardRenderer>(720.0f, m_mainFont);
-    m_actionPanel = std::make_unique<ActionPanel>(sf::Vector2f(720.0f, 0.0f), sf::Vector2f(560.0f, 720.0f), m_mainFont);
-    m_popupBox = std::make_unique<PopupBox>(sf::Vector2f(1280.0f, 720.0f), m_mainFont);
+    m_window.setFramerateLimit(60);
+    m_window.setView(m_baseView);
+    updateLetterboxView(m_window.getSize().x, m_window.getSize().y);
+
+    m_boardView = std::make_unique<BoardRenderer>(Layout1920::kBoardSize, m_mainFont, Layout1920::kBoardOrigin);
+    m_mainUi = std::make_unique<MainUI>(m_titleFont, m_mainFont);
+    m_diceRenderer = std::make_unique<DiceRenderer>();
+    m_popupBox = std::make_unique<PopupBox>(
+        sf::Vector2f(Layout1920::kDesignWidth, Layout1920::kDesignHeight), m_mainFont);
 
     if (!m_boardView->loadAssets("assets/images/board/")) {
         m_lastMessage = "PERINGATAN: Sebagian aset board GUI gagal dimuat.";
+    }
+    if (!m_mainUi->loadAssets("assets/images/ui/", "assets/images/board/")) {
+        m_lastMessage += "\nPERINGATAN: Sebagian aset UI utama gagal dimuat.";
+    }
+    if (!m_diceRenderer->loadAssets("assets/images/ui/dice/")) {
+        m_lastMessage += "\nPERINGATAN: Aset animasi dadu gagal dimuat.";
+    }
+    if (!m_popupBox->loadAssets("assets/images/ui/")) {
+        m_lastMessage += "\nPERINGATAN: Aset popup gagal dimuat.";
     }
 
     initializeGameAndPieces();
     bindEngineCallbacks();
     refreshFromEngineState();
+    setUiInputEnabled(true);
 }
 
 bool SfmlGuiManager::loadFontWithFallback() {
@@ -65,11 +87,44 @@ bool SfmlGuiManager::loadFontWithFallback() {
 
     for (const std::string& path : candidates) {
         if (m_mainFont.loadFromFile(path)) {
-            return true;
+            break;
         }
     }
 
-    return false;
+    if (m_mainFont.getInfo().family.empty()) {
+        return false;
+    }
+
+    if (!m_titleFont.loadFromFile("assets/fonts/BebasNeue-Regular.ttf")) {
+        m_titleFont = m_mainFont;
+    }
+
+    return true;
+}
+
+void SfmlGuiManager::updateLetterboxView(unsigned int windowWidth, unsigned int windowHeight) {
+    if (windowWidth == 0 || windowHeight == 0) {
+        return;
+    }
+
+    const float windowRatio = static_cast<float>(windowWidth) / static_cast<float>(windowHeight);
+    const float viewRatio = m_baseView.getSize().x / m_baseView.getSize().y;
+
+    float sizeX = 1.0f;
+    float sizeY = 1.0f;
+    float posX = 0.0f;
+    float posY = 0.0f;
+
+    if (windowRatio > viewRatio) {
+        sizeX = viewRatio / windowRatio;
+        posX = (1.0f - sizeX) * 0.5f;
+    } else if (windowRatio < viewRatio) {
+        sizeY = windowRatio / viewRatio;
+        posY = (1.0f - sizeY) * 0.5f;
+    }
+
+    m_baseView.setViewport(sf::FloatRect(posX, posY, sizeX, sizeY));
+    m_window.setView(m_baseView);
 }
 
 void SfmlGuiManager::initializeGameAndPieces() {
@@ -91,42 +146,33 @@ void SfmlGuiManager::initializeGameAndPieces() {
     for (size_t i = 0; i < players.size(); ++i) {
         const int pos = players[i]->getPosition();
         const sf::Vector2f tileCenter = m_boardView->getTileCenter(pos);
-        m_players.push_back(std::make_unique<PieceRenderer>(
-            static_cast<int>(i), pieceColors[i % pieceColors.size()], tileCenter));
+        auto renderer = std::make_unique<PieceRenderer>(
+            static_cast<int>(i), pieceColors[i % pieceColors.size()], tileCenter);
+
+        const std::string tokenPath = "assets/images/ui/piece/piece_p" + std::to_string(i + 1) + ".png";
+        renderer->loadTokenTexture(tokenPath);
+        m_players.push_back(std::move(renderer));
     }
 }
 
 void SfmlGuiManager::bindEngineCallbacks() {
-    m_actionPanel->getRollDiceBtn()->setOnClick([this]() {
+    m_mainUi->setOnRollDice([this]() {
         if (m_currentState != GuiState::IDLE) {
             return;
         }
         submitRollDice();
     });
-
-    m_actionPanel->getSaveBtn()->setOnClick([this]() {
-        if (m_currentState != GuiState::IDLE) {
-            return;
-        }
-        submitSave();
-    });
-
-    m_actionPanel->getLoadBtn()->setOnClick([this]() {
-        if (m_currentState != GuiState::IDLE) {
-            return;
-        }
-        submitLoad();
-    });
 }
 
-void SfmlGuiManager::setActionButtonsEnabled(bool enabled) {
-    m_actionPanel->getRollDiceBtn()->setEnabled(enabled);
-    m_actionPanel->getSaveBtn()->setEnabled(enabled);
-    m_actionPanel->getLoadBtn()->setEnabled(enabled);
+void SfmlGuiManager::setUiInputEnabled(bool enabled) {
+    m_mainUi->setRollEnabled(enabled);
 }
 
 void SfmlGuiManager::submitRollDice() {
     try {
+        m_mainUi->setRollVisible(false);
+        setUiInputEnabled(false);
+
         Command cmd;
         cmd.type = CommandType::ROLL_DICE;
         cmd.raw = "LEMPAR_DADU";
@@ -141,6 +187,13 @@ void SfmlGuiManager::submitRollDice() {
             m_deferredPrompt.reset();
         }
 
+        const Dice& dice = m_engine.getDice();
+        const sf::Vector2f boardCenter = m_boardView->getBoardCenter();
+        m_diceRenderer->startRoll(dice.getDie1(),
+                                  dice.getDie2(),
+                                  sf::Vector2f(boardCenter.x + Layout1920::kDiceCenterOffsetFromBoardCenter.x,
+                                               boardCenter.y + Layout1920::kDiceCenterOffsetFromBoardCenter.y));
+
         if (hasMovement) {
             const MovementPayload& movement = result.movement.value();
             if (movement.playerIndex >= 0 && movement.playerIndex < static_cast<int>(m_players.size())) {
@@ -150,47 +203,16 @@ void SfmlGuiManager::submitRollDice() {
                     path.push_back(m_boardView->getTileCenter(index));
                 }
                 m_players[static_cast<size_t>(movement.playerIndex)]->moveAlongPath(path);
-                m_currentState = GuiState::ANIMATING;
-                setActionButtonsEnabled(false);
-                return;
             }
         }
 
-        if (result.prompt.has_value()) {
-            handlePromptRequest(result.prompt.value());
-        } else {
-            m_currentState = GuiState::IDLE;
-            setActionButtonsEnabled(true);
-        }
+        m_currentState = GuiState::ANIMATING;
     } catch (const std::exception& e) {
         m_lastMessage = std::string("ERROR: ") + e.what();
-        m_actionPanel->setSystemMessage(m_lastMessage);
-    }
-}
-
-void SfmlGuiManager::submitSave() {
-    try {
-        Command cmd;
-        cmd.type = CommandType::SAVE;
-        cmd.raw = "SIMPAN";
-        const CommandResult result = m_engine.processCommand(cmd);
-        consumeResult(result, true);
-    } catch (const std::exception& e) {
-        m_lastMessage = std::string("ERROR: ") + e.what();
-        m_actionPanel->setSystemMessage(m_lastMessage);
-    }
-}
-
-void SfmlGuiManager::submitLoad() {
-    try {
-        Command cmd;
-        cmd.type = CommandType::LOAD;
-        cmd.raw = "MUAT";
-        const CommandResult result = m_engine.processCommand(cmd);
-        consumeResult(result, true);
-    } catch (const std::exception& e) {
-        m_lastMessage = std::string("ERROR: ") + e.what();
-        m_actionPanel->setSystemMessage(m_lastMessage);
+        refreshFromEngineState();
+        m_mainUi->setRollVisible(true);
+        setUiInputEnabled(true);
+        m_currentState = GuiState::IDLE;
     }
 }
 
@@ -204,24 +226,23 @@ void SfmlGuiManager::submitResolveSkillDrop(int discardIndex) {
         const CommandResult result = m_engine.processCommand(cmd);
         consumeResult(result, true);
         m_currentState = GuiState::IDLE;
-        setActionButtonsEnabled(true);
+        m_mainUi->setRollVisible(true);
+        setUiInputEnabled(true);
         handlePromptIfAny(result);
     } catch (const std::exception& e) {
         m_lastMessage = std::string("ERROR: ") + e.what();
-        m_actionPanel->setSystemMessage(m_lastMessage);
         m_currentState = GuiState::IDLE;
-        setActionButtonsEnabled(true);
+        m_mainUi->setRollVisible(true);
+        setUiInputEnabled(true);
+        refreshFromEngineState();
     }
 }
 
 void SfmlGuiManager::consumeResult(const CommandResult& result, bool syncPiecePositions) {
     m_lastMessage = buildMessageFromResult(result);
-    m_actionPanel->setSystemMessage(m_lastMessage);
+
     const Player& current = m_engine.getCurrentPlayer();
-    m_actionPanel->updatePlayerInfo(current.getUsername(),
-                                    current.getMoney(),
-                                    m_engine.getCurrentTurn(),
-                                    m_engine.getMaxTurn());
+    m_mainUi->updateData(m_engine.getPlayers(), current, m_lastMessage);
 
     if (!syncPiecePositions) {
         return;
@@ -237,7 +258,8 @@ void SfmlGuiManager::consumeResult(const CommandResult& result, bool syncPiecePo
 void SfmlGuiManager::handlePromptIfAny(const CommandResult& result) {
     if (!result.prompt.has_value()) {
         m_currentState = GuiState::IDLE;
-        setActionButtonsEnabled(true);
+        m_mainUi->setRollVisible(true);
+        setUiInputEnabled(true);
         return;
     }
 
@@ -247,7 +269,8 @@ void SfmlGuiManager::handlePromptIfAny(const CommandResult& result) {
 void SfmlGuiManager::handlePromptRequest(const PromptRequest& prompt) {
     if (prompt.key == "SKILL_DROP") {
         m_currentState = GuiState::WAITING_CONFIRMATION;
-        setActionButtonsEnabled(false);
+        m_mainUi->setRollVisible(false);
+        setUiInputEnabled(false);
 
         m_popupBox->showOptions(
             "PILIH KARTU DIBUANG",
@@ -258,15 +281,13 @@ void SfmlGuiManager::handlePromptRequest(const PromptRequest& prompt) {
     }
 
     m_currentState = GuiState::IDLE;
-    setActionButtonsEnabled(true);
+    m_mainUi->setRollVisible(true);
+    setUiInputEnabled(true);
 }
 
 void SfmlGuiManager::refreshFromEngineState() {
     const Player& current = m_engine.getCurrentPlayer();
-    m_actionPanel->updatePlayerInfo(current.getUsername(),
-                                    current.getMoney(),
-                                    m_engine.getCurrentTurn(),
-                                    m_engine.getMaxTurn());
+    m_mainUi->updateData(m_engine.getPlayers(), current, m_lastMessage);
 
     const auto& players = m_engine.getPlayers();
     const size_t count = std::min(players.size(), m_players.size());
@@ -281,7 +302,6 @@ void SfmlGuiManager::run() {
         const sf::Time dt = clock.restart();
         processEvents();
 
-        // Prevent touching a closed SFML window in update/render on shutdown.
         if (!m_window.isOpen()) {
             break;
         }
@@ -299,25 +319,55 @@ void SfmlGuiManager::processEvents() {
             continue;
         }
 
+        if (event.type == sf::Event::Resized) {
+            updateLetterboxView(event.size.width, event.size.height);
+            continue;
+        }
+
+        if (event.type == sf::Event::MouseWheelScrolled) {
+            const sf::Vector2f mousePos =
+                m_window.mapPixelToCoords(sf::Mouse::getPosition(m_window), m_baseView);
+
+            if (!m_popupBox->isVisible() && m_currentState == GuiState::IDLE) {
+                m_mainUi->handleMouseWheel(event.mouseWheelScroll.delta, mousePos);
+            }
+            continue;
+        }
+
         if (event.type == sf::Event::MouseButtonPressed && event.mouseButton.button == sf::Mouse::Left) {
-            const sf::Vector2f mousePos = m_window.mapPixelToCoords(sf::Mouse::getPosition(m_window));
+            const sf::Vector2f mousePos =
+                m_window.mapPixelToCoords(sf::Mouse::getPosition(m_window), m_baseView);
 
             if (m_popupBox->isVisible()) {
-                m_popupBox->handleMouseClick(mousePos);
+                m_popupBox->handleMousePressed(mousePos);
             } else if (m_currentState == GuiState::IDLE) {
-                m_actionPanel->handleMouseClick(mousePos);
+                m_mainUi->handleMousePressed(mousePos);
             }
+            continue;
+        }
+
+        if (event.type == sf::Event::MouseButtonReleased && event.mouseButton.button == sf::Mouse::Left) {
+            const sf::Vector2f mousePos =
+                m_window.mapPixelToCoords(sf::Mouse::getPosition(m_window), m_baseView);
+
+            if (!m_popupBox->isVisible() && m_currentState == GuiState::IDLE) {
+                m_mainUi->handleMouseReleased(mousePos);
+            } else if (m_popupBox->isVisible()) {
+                m_popupBox->handleMouseReleased(mousePos);
+            }
+            continue;
         }
     }
 }
 
 void SfmlGuiManager::update(sf::Time dt) {
-    const sf::Vector2f mousePos = m_window.mapPixelToCoords(sf::Mouse::getPosition(m_window));
+    const sf::Vector2f mousePos =
+        m_window.mapPixelToCoords(sf::Mouse::getPosition(m_window), m_baseView);
 
     if (m_popupBox->isVisible()) {
         m_popupBox->update(mousePos);
     } else {
-        m_actionPanel->update(mousePos);
+        m_mainUi->update(mousePos);
     }
 
     bool anyMoving = false;
@@ -328,28 +378,37 @@ void SfmlGuiManager::update(sf::Time dt) {
         }
     }
 
-    if (m_currentState == GuiState::ANIMATING && !anyMoving) {
+    m_diceRenderer->update(dt);
+
+    if (m_currentState == GuiState::ANIMATING && !anyMoving && !m_diceRenderer->isRolling()) {
         refreshFromEngineState();
         if (m_deferredPrompt.has_value()) {
             handlePromptRequest(m_deferredPrompt.value());
             m_deferredPrompt.reset();
         } else {
             m_currentState = GuiState::IDLE;
-            setActionButtonsEnabled(true);
+            m_mainUi->setRollVisible(true);
+            setUiInputEnabled(true);
         }
     }
 }
 
 void SfmlGuiManager::render() {
-    m_window.clear();
+    m_window.clear(sf::Color::Black);
+    m_window.setView(m_baseView);
+
+    m_mainUi->renderBackground(m_window);
     m_boardView->render(m_window, m_engine.getBoard());
-    m_actionPanel->render(m_window);
 
     for (const auto& player : m_players) {
         player->render(m_window);
     }
 
+    m_diceRenderer->render(m_window);
+
+    m_mainUi->renderOverlay(m_window);
     m_popupBox->render(m_window);
+
     m_window.display();
 }
 } // namespace viewsGUI
