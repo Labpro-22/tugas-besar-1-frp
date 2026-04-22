@@ -136,7 +136,7 @@ void AuctionManager::continueAuction() {
             if (!mustBid) {
                 options.push_back("PASS");
             }
-            options.push_back("BID <jumlah>");
+            options.push_back("BID_MIN");
 
             engine.pushPrompt(
                 promptKey,
@@ -174,14 +174,18 @@ void AuctionManager::continueAuction() {
             continue;
         }
 
-        if (input.rfind("BID ", 0) == 0) {
+        if (input.rfind("BID ", 0) == 0 || input == "BID_MIN") {
             int bidAmount = 0;
-            try {
-                bidAmount = std::stoi(input.substr(4));
-            } catch (const std::exception&) {
-                engine.pushEvent(GameEventType::AUCTION, UiTone::WARNING,
-                    "Input Tidak Valid", "Format bid harus: BID <angka>.");
-                continue;
+            if (input == "BID_MIN") {
+                bidAmount = highestBid + 1;
+            } else {
+                try {
+                    bidAmount = std::stoi(input.substr(4));
+                } catch (const std::exception&) {
+                    engine.pushEvent(GameEventType::AUCTION, UiTone::WARNING,
+                        "Input Tidak Valid", "Format bid harus: BID <angka>.");
+                    continue;
+                }
             }
 
             if (bidAmount <= highestBid) {

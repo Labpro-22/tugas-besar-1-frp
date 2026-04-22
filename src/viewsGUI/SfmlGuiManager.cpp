@@ -39,15 +39,11 @@ std::string buildMessageFromResult(const CommandResult& result) {
         out << "- " << event.title << ": " << event.message << "\n";
     }
 
-    if (result.prompt.has_value()) {
-        out << "- INPUT: " << result.prompt->message;
+    if (!result.prompts.empty()) {
+        out << "- INPUT: " << result.prompts.front().message;
     }
 
     return out.str();
-}
-
-bool startsWith(const std::string& value, const std::string& prefix) {
-    return value.rfind(prefix, 0) == 0;
 }
 
 std::string upperCopy(const std::string& value) {
@@ -197,6 +193,8 @@ void SfmlGuiManager::submitRollDice() {
     try {
         m_mainUi->setRollVisible(false);
         setUiInputEnabled(false);
+        m_pendingPrompts.clear();
+        m_deferredMovement.reset();
 
         Command cmd;
         cmd.type = CommandType::ROLL_DICE;
@@ -205,18 +203,7 @@ void SfmlGuiManager::submitRollDice() {
         const CommandResult result = m_engine.processCommand(cmd);
         const bool hasMovement = result.movement.has_value();
         consumeResult(result, !hasMovement);
-
-        if (result.movement.has_value()) {
-            m_deferredMovement = result.movement.value();
-        } else {
-            m_deferredMovement.reset();
-        }
-
-        if (result.prompt.has_value()) {
-            m_deferredPrompt = result.prompt.value();
-        } else {
-            m_deferredPrompt.reset();
-        }
+        enqueuePrompts(result.prompts);
 
         const Dice& dice = m_engine.getDice();
         const sf::Vector2f boardCenter = m_boardView->getBoardCenter();
@@ -226,17 +213,11 @@ void SfmlGuiManager::submitRollDice() {
                                                boardCenter.y + Layout1920::kDiceCenterOffsetFromBoardCenter.y));
 
         if (hasMovement) {
-            const MovementPayload& movement = result.movement.value();
-            if (movement.playerIndex >= 0 && movement.playerIndex < static_cast<int>(m_players.size())) {
-                std::vector<sf::Vector2f> path;
-                path.reserve(movement.path.size());
-                for (int index : movement.path) {
-                    path.push_back(m_boardView->getTileCenter(index));
-                }
-                m_players[static_cast<size_t>(movement.playerIndex)]->moveAlongPath(path);
-            }
+            beginMovementAnimation(result.movement.value());
+            return;
         }
 
+        m_deferredMovement.reset();
         m_currentState = GuiState::ANIMATING;
     } catch (const std::exception& e) {
         m_lastMessage = std::string("ERROR: ") + e.what();
@@ -247,26 +228,75 @@ void SfmlGuiManager::submitRollDice() {
     }
 }
 
-void SfmlGuiManager::submitResolveSkillDrop(int discardIndex) {
-    try {
-        Command cmd;
-        cmd.type = CommandType::RESOLVE_SKILL_DROP;
-        cmd.raw = "PILIH_BUANG_KARTU";
-        cmd.args = {std::to_string(discardIndex)};
+void SfmlGuiManager::beginMovementAnimation(const MovementPayload& movement) {
+    m_deferredMovement = movement;
 
-        const CommandResult result = m_engine.processCommand(cmd);
-        consumeResult(result, true);
-        m_currentState = GuiState::IDLE;
-        m_mainUi->setRollVisible(true);
-        setUiInputEnabled(true);
-        handlePromptIfAny(result);
-    } catch (const std::exception& e) {
-        m_lastMessage = std::string("ERROR: ") + e.what();
-        m_currentState = GuiState::IDLE;
-        m_mainUi->setRollVisible(true);
-        setUiInputEnabled(true);
-        refreshFromEngineState();
+    if (movement.playerIndex >= 0 && movement.playerIndex < static_cast<int>(m_players.size())) {
+        std::vector<sf::Vector2f> path;
+        path.reserve(movement.path.size());
+        for (int index : movement.path) {
+            path.push_back(m_boardView->getTileCenter(index));
+        }
+        m_players[static_cast<size_t>(movement.playerIndex)]->moveAlongPath(path);
     }
+
+    m_currentState = GuiState::ANIMATING;
+}
+
+void SfmlGuiManager::enqueuePrompts(const std::vector<PromptRequest>& prompts) {
+    for (const PromptRequest& prompt : prompts) {
+        m_pendingPrompts.push_back(prompt);
+    }
+}
+
+void SfmlGuiManager::processNextPrompt() {
+    if (m_popupBox->isVisible()) {
+        return;
+    }
+
+    if (m_pendingPrompts.empty()) {
+        resumeFlowAfterPopup();
+        return;
+    }
+
+    m_currentState = GuiState::WAITING_CONFIRMATION;
+    m_mainUi->setRollVisible(false);
+    setUiInputEnabled(false);
+
+    const PromptRequest prompt = m_pendingPrompts.front();
+    m_popupBox->showPrompt(prompt, [this, prompt](const std::string& answerKey) {
+        m_popupBox->hide();
+        if (!m_pendingPrompts.empty()) {
+            m_pendingPrompts.pop_front();
+        }
+
+        try {
+            m_engine.setPromptAnswer(prompt.id, answerKey);
+
+            if (!m_engine.hasPendingContinuation()) {
+                refreshFromEngineState();
+                processNextPrompt();
+                return;
+            }
+
+            const CommandResult resumed = m_engine.resumePendingAction();
+            const bool hasMovement = resumed.movement.has_value();
+            consumeResult(resumed, !hasMovement);
+            enqueuePrompts(resumed.prompts);
+
+            if (hasMovement) {
+                beginMovementAnimation(resumed.movement.value());
+                return;
+            }
+
+            refreshFromEngineState();
+            processNextPrompt();
+        } catch (const std::exception& e) {
+            m_lastMessage = std::string("ERROR: ") + e.what();
+            refreshFromEngineState();
+            resumeFlowAfterPopup();
+        }
+    });
 }
 
 void SfmlGuiManager::consumeResult(const CommandResult& result, bool syncPiecePositions) {
@@ -284,30 +314,6 @@ void SfmlGuiManager::consumeResult(const CommandResult& result, bool syncPiecePo
     for (size_t i = 0; i < count; ++i) {
         m_players[i]->snapTo(m_boardView->getTileCenter(players[i]->getPosition()));
     }
-}
-
-void SfmlGuiManager::handlePromptIfAny(const CommandResult& result) {
-    if (!result.prompt.has_value()) {
-        resumeFlowAfterPopup();
-        return;
-    }
-
-    handlePromptRequest(result.prompt.value());
-}
-
-void SfmlGuiManager::handlePromptRequest(const PromptRequest& prompt) {
-    if (prompt.key == "SKILL_DROP") {
-        m_currentState = GuiState::WAITING_CONFIRMATION;
-        m_mainUi->setRollVisible(false);
-        setUiInputEnabled(false);
-
-        m_popupBox->show(buildSkillDropPayload(prompt), [this](const std::string& actionId) {
-            this->handlePopupAction(actionId);
-        });
-        return;
-    }
-
-    resumeFlowAfterPopup();
 }
 
 void SfmlGuiManager::refreshFromEngineState() {
@@ -410,11 +416,8 @@ void SfmlGuiManager::update(sf::Time dt) {
         if (m_deferredMovement.has_value()) {
             showLandingPopup(m_deferredMovement.value());
             m_deferredMovement.reset();
-        } else if (m_deferredPrompt.has_value()) {
-            handlePromptRequest(m_deferredPrompt.value());
-            m_deferredPrompt.reset();
         } else {
-            resumeFlowAfterPopup();
+            processNextPrompt();
         }
     }
 }
@@ -449,44 +452,96 @@ void SfmlGuiManager::showLandingPopup(const MovementPayload& movement) {
 }
 
 void SfmlGuiManager::handlePopupAction(const std::string& actionId) {
-    if (startsWith(actionId, "skill_drop:")) {
-        int selected = 0;
-        try {
-            selected = std::stoi(actionId.substr(std::string("skill_drop:").size()));
-        } catch (const std::exception&) {
-            m_lastMessage = "ERROR: index pilihan kartu tidak valid.";
-            m_popupBox->hide();
-            resumeFlowAfterPopup();
-            refreshFromEngineState();
+    auto resolvePendingPurchase = [this](const std::string& answer) -> bool {
+        for (auto it = m_pendingPrompts.begin(); it != m_pendingPrompts.end(); ++it) {
+            if (it->id.rfind("beli_", 0) != 0) {
+                continue;
+            }
+
+            const std::string promptId = it->id;
+            m_pendingPrompts.erase(it);
+            m_engine.setPromptAnswer(promptId, answer);
+
+            if (!m_engine.hasPendingContinuation()) {
+                return true;
+            }
+
+            const CommandResult resumed = m_engine.resumePendingAction();
+            const bool hasMovement = resumed.movement.has_value();
+            consumeResult(resumed, !hasMovement);
+            enqueuePrompts(resumed.prompts);
+
+            if (hasMovement) {
+                beginMovementAnimation(resumed.movement.value());
+            } else {
+                refreshFromEngineState();
+                processNextPrompt();
+            }
+            return true;
+        }
+        return false;
+    };
+
+    try {
+        m_popupBox->hide();
+
+        if (actionId == "buy_land") {
+            if (!resolvePendingPurchase("y")) {
+                m_lastMessage = "Tidak ada prompt pembelian aktif untuk diproses.";
+                refreshFromEngineState();
+                processNextPrompt();
+            }
             return;
         }
 
-        m_popupBox->hide();
-        submitResolveSkillDrop(selected);
-        return;
-    }
+        if (actionId == "add_house") {
+            const Player& current = m_engine.getCurrentPlayer();
+            const Tile& currentTile = m_engine.getBoard().getTileByIndex(current.getPosition());
+            const auto* propertyTile = dynamic_cast<const PropertyTile*>(&currentTile);
+            if (!propertyTile) {
+                throw GameException("BANGUN hanya bisa dilakukan di petak properti.");
+            }
 
-    if (actionId == "buy_land") {
-        m_lastMessage = "Aksi 'Beli Lahan' dipilih (dummy UI, belum terhubung ke command engine).";
-    } else if (actionId == "add_house") {
-        m_lastMessage = "Aksi '+ Rumah' dipilih (dummy UI, belum terhubung ke command engine).";
-    } else if (actionId == "cancel" || actionId == "close") {
-        m_lastMessage = "Popup ditutup oleh pemain.";
-    } else {
+            Command cmd;
+            cmd.type = CommandType::BUILD;
+            cmd.raw = "BANGUN";
+            cmd.args = {propertyTile->getProperty().getCode()};
+
+            const CommandResult result = m_engine.processCommand(cmd);
+            const bool hasMovement = result.movement.has_value();
+            consumeResult(result, !hasMovement);
+            enqueuePrompts(result.prompts);
+
+            if (hasMovement) {
+                beginMovementAnimation(result.movement.value());
+            } else {
+                refreshFromEngineState();
+                processNextPrompt();
+            }
+            return;
+        }
+
+        if (actionId == "cancel" || actionId == "close") {
+            if (!resolvePendingPurchase("n")) {
+                m_lastMessage = "Popup ditutup oleh pemain.";
+                refreshFromEngineState();
+                processNextPrompt();
+            }
+            return;
+        }
+
         m_lastMessage = "Aksi popup dipilih: " + actionId;
+        refreshFromEngineState();
+        processNextPrompt();
+    } catch (const GameException& e) {
+        m_lastMessage = std::string("ERROR: ") + e.what();
+        refreshFromEngineState();
+        processNextPrompt();
+    } catch (const std::exception& e) {
+        m_lastMessage = std::string("ERROR: ") + e.what();
+        refreshFromEngineState();
+        processNextPrompt();
     }
-
-    m_popupBox->hide();
-    refreshFromEngineState();
-
-    if (m_deferredPrompt.has_value()) {
-        const PromptRequest deferred = m_deferredPrompt.value();
-        m_deferredPrompt.reset();
-        handlePromptRequest(deferred);
-        return;
-    }
-
-    resumeFlowAfterPopup();
 }
 
 PopupPayload SfmlGuiManager::buildLandingPayload(const MovementPayload& movement) const {
@@ -584,28 +639,6 @@ PopupPayload SfmlGuiManager::buildLandingPayload(const MovementPayload& movement
     }
 
     payload.actionItems = {PopupActionItem{"close", "Tutup", "assets/images/ui/btn_cancel.png", true}};
-    return payload;
-}
-
-PopupPayload SfmlGuiManager::buildSkillDropPayload(const PromptRequest& prompt) const {
-    PopupPayload payload;
-    payload.mode = PopupMode::INFO;
-    payload.headerTitle = "PILIH KARTU DIBUANG";
-    payload.cardTitle = "KARTU KEMAMPUAN";
-    payload.description = prompt.message;
-
-    for (size_t i = 0; i < prompt.options.size(); ++i) {
-        payload.actionItems.push_back(PopupActionItem{
-            "skill_drop:" + std::to_string(i),
-            std::to_string(i) + ". " + prompt.options[i],
-            "assets/images/ui/btn_cancel.png",
-            true});
-    }
-
-    if (payload.actionItems.empty()) {
-        payload.actionItems.push_back(PopupActionItem{"close", "Tutup", "assets/images/ui/btn_cancel.png", true});
-    }
-
     return payload;
 }
 

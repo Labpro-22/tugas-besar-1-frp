@@ -1,5 +1,3 @@
-#include "../include/core/CardManager.hpp"
-#include "../include/core/EffectManager.hpp"
 #include "../include/core/GameEngine.hpp"
 #include "../include/viewsGUI/SfmlGuiManager.hpp"
 
@@ -8,11 +6,6 @@
 int main() {
     try {
         GameEngine engine;
-        CardManager cardManager;
-        EffectManager effectManager;
-
-        engine.setCardManager(&cardManager);
-        engine.setEffectManager(&effectManager);
 
         viewsGUI::SfmlGuiManager gui(engine);
         gui.run();

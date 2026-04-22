@@ -50,6 +50,8 @@
 #include <stdexcept>
 #include <unordered_map>
 
+using namespace std;
+
 namespace {
 std::string normalizeColorGroup(const std::string& raw) {
     if (raw == "COKLAT") return "CK";
@@ -128,22 +130,23 @@ string toOwnershipStatusString(OwnershipStatus status) {
 GameEngine::GameEngine()
     : board(nullptr),
       gameOver(false),
-    gameStarted(false),
-    turnActionTaken(false),
-    diceRolledThisTurn(false),
-    extraRollAllowedThisTurn(false),
+      gameStarted(false),
+      turnActionTaken(false),
+      diceRolledThisTurn(false),
+      extraRollAllowedThisTurn(false),
       maxTurn(0),
-            initialBalance(1000),
+      initialBalance(1000),
       goSalary(200),
       jailFine(50),
       dice(6),
-      bank(nullptr),
-      auctionManager(nullptr),
-      bankruptcyManager(nullptr),
-      propertyManager(nullptr),
-      cardManager(nullptr),
-      effectManager(nullptr),
-      logger(nullptr) {}
+      bank(std::make_unique<Bank>()),
+      logger(std::make_unique<TransactionLogger>()),
+      cardManager(std::make_unique<CardManager>()),
+      effectManager(std::make_unique<EffectManager>()),
+      propertyManager(std::make_unique<PropertyManager>(*this, *bank, *logger)),
+      auctionManager(std::make_unique<AuctionManager>(*this, *bank, *logger)),
+      bankruptcyManager(std::make_unique<BankruptcyManager>(
+          *this, *bank, *logger, *propertyManager, *auctionManager)) {}
 
 GameEngine::~GameEngine() {
     delete board;
@@ -154,18 +157,6 @@ GameEngine::~GameEngine() {
     }
     players.clear();
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Dependency injection
-// ─────────────────────────────────────────────────────────────────────────────
-
-void GameEngine::setBank(Bank* b)                          { bank               = b;  }
-void GameEngine::setAuctionManager(AuctionManager* am)     { auctionManager     = am; }
-void GameEngine::setBankruptcyManager(BankruptcyManager* bm){ bankruptcyManager = bm; }
-void GameEngine::setPropertyManager(PropertyManager* pm)   { propertyManager    = pm; }
-void GameEngine::setCardManager(CardManager* cm)           { cardManager        = cm; }
-void GameEngine::setEffectManager(EffectManager* em)       { effectManager      = em; }
-void GameEngine::setTransactionLogger(TransactionLogger* tl){ logger            = tl; }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Lifecycle
@@ -411,7 +402,7 @@ CommandResult GameEngine::processCommand(const Command& cmd) {
                 const int oldPos = current.getPosition();
                 flowResult.append(moveCurrentPlayer(total));
                 buildMovementPath(oldPos, total, current.getPosition());
-                if (flowResult.prompt.has_value() || hasPendingContinuation()) {
+                if (!flowResult.prompts.empty() || hasPendingContinuation()) {
                     chainPendingContinuation([this]() {
                         CommandResult resumed;
                         Player& resumedPlayer = getCurrentPlayer();
@@ -457,7 +448,7 @@ CommandResult GameEngine::processCommand(const Command& cmd) {
         const int oldPos = current.getPosition();
         flowResult.append(moveCurrentPlayer(total));
         buildMovementPath(oldPos, total, current.getPosition());
-        if (flowResult.prompt.has_value() || hasPendingContinuation()) {
+        if (!flowResult.prompts.empty() || hasPendingContinuation()) {
             chainPendingContinuation([this, rolledDouble]() {
                 CommandResult resumed;
                 Player& resumedPlayer = getCurrentPlayer();
@@ -1169,7 +1160,6 @@ CommandResult GameEngine::executeTurn() {
     if (cardManager && !next.isBankrupt()) {
         std::shared_ptr<SkillCard> drawn = cardManager->drawSkillCard(next);
         if (cardManager->hasPendingSkillDrop(next)) {
-            // Drop prompting is handled elsewhere, but first we print they got a card.
             result.addEvent(
                 GameEventType::CARD,
                 UiTone::INFO,
@@ -1177,6 +1167,29 @@ CommandResult GameEngine::executeTurn() {
                 "Kamu mendapatkan 1 kartu acak baru!\n"
                 "Kartu yang didapat: " + drawn->getTypeName() + "."
             );
+
+            const std::string promptKey = "skill_drop_" + next.getUsername();
+            std::vector<PromptOption> options;
+            const std::vector<std::string> labels = cardManager->getPendingSkillDropOptions(next);
+            options.reserve(labels.size());
+            for (size_t i = 0; i < labels.size(); ++i) {
+                options.push_back(PromptOption{
+                    std::to_string(i),
+                    std::to_string(i + 1) + ". " + labels[i]});
+            }
+
+            PromptRequest prompt;
+            prompt.id = promptKey;
+            prompt.title = "KARTU KEMAMPUAN";
+            prompt.message = "Tangan penuh (4 kartu). Pilih 1 kartu yang akan dibuang.";
+            prompt.options = std::move(options);
+            pushPrompt(prompt);
+            setPendingContinuation([this]() {
+                return handlePendingSkillDropPrompt();
+            });
+
+            flushEvents(result);
+            return result;
         } else {
             result.addEvent(
                 GameEventType::CARD,
@@ -1885,6 +1898,94 @@ void GameEngine::resetTurnActionFlags() {
     extraRollAllowedThisTurn = false;
 }
 
+CommandResult GameEngine::handlePendingSkillDropPrompt() {
+    CommandResult result;
+    result.commandName = "PILIH_BUANG_KARTU";
+
+    if (!cardManager) {
+        throw GameException("CardManager belum diinisialisasi.");
+    }
+
+    Player& current = getCurrentPlayer();
+    if (!cardManager->hasPendingSkillDrop(current)) {
+        result.addEvent(
+            GameEventType::CARD,
+            UiTone::INFO,
+            "Kartu Kemampuan",
+            "Tidak ada kartu skill yang perlu dibuang.");
+        flushEvents(result);
+        return result;
+    }
+
+    const std::string promptKey = "skill_drop_" + current.getUsername();
+    const std::vector<std::string> labels = cardManager->getPendingSkillDropOptions(current);
+
+    auto requeuePrompt = [&]() {
+        std::vector<PromptOption> options;
+        options.reserve(labels.size());
+        for (size_t i = 0; i < labels.size(); ++i) {
+            options.push_back(PromptOption{
+                std::to_string(i),
+                std::to_string(i + 1) + ". " + labels[i]});
+        }
+
+        PromptRequest prompt;
+        prompt.id = promptKey;
+        prompt.title = "KARTU KEMAMPUAN";
+        prompt.message = "Pilih 1 kartu yang akan dibuang.";
+        prompt.options = std::move(options);
+        pushPrompt(prompt);
+        setPendingContinuation([this]() {
+            return handlePendingSkillDropPrompt();
+        });
+    };
+
+    if (!hasPromptAnswer(promptKey)) {
+        requeuePrompt();
+        flushEvents(result);
+        return result;
+    }
+
+    const std::string rawAnswer = consumePromptAnswer(promptKey);
+    int discardIndex = -1;
+    try {
+        discardIndex = std::stoi(rawAnswer);
+    } catch (const std::exception&) {
+        discardIndex = -1;
+    }
+
+    if (discardIndex < 0 || discardIndex >= static_cast<int>(labels.size())) {
+        result.addEvent(
+            GameEventType::CARD,
+            UiTone::WARNING,
+            "Input Tidak Valid",
+            "Pilih nomor kartu yang tersedia.");
+        requeuePrompt();
+        flushEvents(result);
+        return result;
+    }
+
+    cardManager->resolvePendingSkillDrop(current, discardIndex);
+    result.addEvent(
+        GameEventType::CARD,
+        UiTone::SUCCESS,
+        "Kartu Kemampuan",
+        current.getUsername() + " membuang kartu: " + labels[static_cast<size_t>(discardIndex)] + ".");
+
+    if (logger) {
+        logger->setCurrentTurn(turnManager.getTurnNumber());
+    }
+
+    result.addEvent(
+        GameEventType::TURN,
+        UiTone::INFO,
+        "Giliran Berikutnya",
+        "Sekarang giliran " + current.getUsername() + ".");
+
+    flushEvents(result);
+    return result;
+}
+
 // ── Event buffer API ──────────────────────────────────────────────────────────
 
 void GameEngine::pushEvent(GameEventType type, UiTone tone,
@@ -1892,14 +1993,23 @@ void GameEngine::pushEvent(GameEventType type, UiTone tone,
     pendingEvents_.push_back(GameEvent{type, tone, title, msg});
 }
 
+void GameEngine::pushPrompt(const PromptRequest& prompt) {
+    pendingPrompts_.push_back(prompt);
+}
+
 void GameEngine::pushPrompt(const std::string& key, const std::string& msg,
-                             const std::vector<std::string>& options, bool required) {
+                             const std::vector<std::string>& options, bool required,
+                             const std::string& title) {
     PromptRequest pr;
-    pr.key     = key;
+    pr.id      = key;
+    pr.title   = title;
     pr.message = msg;
-    pr.options = options;
+    pr.options.reserve(options.size());
+    for (const std::string& option : options) {
+        pr.options.push_back(PromptOption{option, option});
+    }
     pr.required = required;
-    pendingPrompts_.push_back(pr);
+    pushPrompt(pr);
 }
 
 void GameEngine::flushEvents(CommandResult& result) {
@@ -1908,11 +2018,8 @@ void GameEngine::flushEvents(CommandResult& result) {
     }
     pendingEvents_.clear();
 
-    // Hanya simpan prompt terakhir ke result (UI hanya handle satu prompt sekaligus)
-    if (!pendingPrompts_.empty()) {
-        result.prompt = pendingPrompts_.back();
-        pendingPrompts_.clear();
-    }
+    result.prompts.insert(result.prompts.end(), pendingPrompts_.begin(), pendingPrompts_.end());
+    pendingPrompts_.clear();
 }
 
 void GameEngine::setPendingContinuation(

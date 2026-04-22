@@ -7,6 +7,8 @@
 #include <string>
 #include <vector>
 
+#include "../core/CommandResult.hpp"
+
 namespace viewsGUI {
 enum class PopupMode {
     PROPERTY,
@@ -53,6 +55,7 @@ public:
     bool loadAssets(const std::string& uiDir);
 
     void show(const PopupPayload& payload, ActionCallback onAction);
+    void showPrompt(const PromptRequest& prompt, ActionCallback onAnswer);
     void hide();
     void minimize();
     void maximize();

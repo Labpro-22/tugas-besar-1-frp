@@ -3,6 +3,7 @@
 
 #include <SFML/Graphics.hpp>
 
+#include <deque>
 #include <memory>
 #include <optional>
 #include <string>
@@ -42,7 +43,7 @@ private:
     std::vector<std::unique_ptr<PieceRenderer>> m_players;
 
     std::string m_lastMessage;
-    std::optional<PromptRequest> m_deferredPrompt;
+    std::deque<PromptRequest> m_pendingPrompts;
     std::optional<MovementPayload> m_deferredMovement;
 
     void processEvents();
@@ -58,15 +59,14 @@ private:
     void setUiInputEnabled(bool enabled);
 
     void submitRollDice();
-    void submitResolveSkillDrop(int discardIndex);
+    void beginMovementAnimation(const MovementPayload& movement);
+    void enqueuePrompts(const std::vector<PromptRequest>& prompts);
+    void processNextPrompt();
 
     void consumeResult(const CommandResult& result, bool syncPiecePositions);
-    void handlePromptIfAny(const CommandResult& result);
-    void handlePromptRequest(const PromptRequest& prompt);
     void showLandingPopup(const MovementPayload& movement);
     void handlePopupAction(const std::string& actionId);
     PopupPayload buildLandingPayload(const MovementPayload& movement) const;
-    PopupPayload buildSkillDropPayload(const PromptRequest& prompt) const;
     std::vector<int> buildDummyRentRows(const Property& property) const;
     sf::Color resolvePropertyColor(const Property& property) const;
     void resumeFlowAfterPopup();

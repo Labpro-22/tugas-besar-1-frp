@@ -118,11 +118,20 @@ void BankruptcyManager::runLiquidationPanel(Player& player, int obligation) {
         return;
     }
 
-    int choice = 0;
+    int choice = -1;
+    const std::string answer = engine.consumePromptAnswer(promptKey);
     try {
-        choice = std::stoi(engine.consumePromptAnswer(promptKey));
+        choice = std::stoi(answer);
     } catch (const std::exception&) {
-        choice = -1;
+        for (size_t i = 0; i < options.size(); ++i) {
+            if (answer == options[i]) {
+                choice = static_cast<int>(i) + 1;
+                break;
+            }
+        }
+        if (answer == "SELESAI") {
+            choice = 0;
+        }
     }
 
     if (choice == 0) {

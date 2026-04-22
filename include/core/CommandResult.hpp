@@ -35,10 +35,16 @@ struct GameEvent {
     std::string message;
 };
 
-struct PromptRequest {
+struct PromptOption {
     std::string key;
+    std::string label;
+};
+
+struct PromptRequest {
+    std::string id;
+    std::string title;
     std::string message;
-    std::vector<std::string> options;
+    std::vector<PromptOption> options;
     bool required = true;
 };
 
@@ -54,7 +60,7 @@ struct CommandResult {
     bool success = true;
     std::string commandName;
     std::vector<GameEvent> events;
-    std::optional<PromptRequest> prompt;
+    std::vector<PromptRequest> prompts;
     std::optional<MovementPayload> movement;
 
     void addEvent(GameEventType type,
@@ -66,11 +72,9 @@ struct CommandResult {
 
     void append(const CommandResult& other) {
         events.insert(events.end(), other.events.begin(), other.events.end());
+        prompts.insert(prompts.end(), other.prompts.begin(), other.prompts.end());
         if (!other.success) {
             success = false;
-        }
-        if (other.prompt.has_value()) {
-            prompt = other.prompt;
         }
         if (other.movement.has_value()) {
             movement = other.movement;

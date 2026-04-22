@@ -1,14 +1,13 @@
 #pragma once
 #include <functional>
-#include <string>
-#include <vector>
 #include <memory>
+#include <string>
 #include <unordered_map>
+#include <vector>
 #include "../../include/models/Dice.hpp"
 #include "../../include/core/TurnManager.hpp"
 #include "../../include/core/Command.hpp"
 #include "../../include/core/CommandResult.hpp"
-using namespace std;
 
 class Player;
 class Board;
@@ -27,7 +26,7 @@ class GameSnapshot;
 class GameEngine{
     private:
         Board* board;
-        vector<Player*> players;
+        std::vector<Player*> players;
         bool gameOver;
         bool gameStarted;
         bool turnActionTaken;
@@ -40,26 +39,28 @@ class GameEngine{
         TurnManager turnManager;
         Dice dice;
 
-        Bank* bank;
-        AuctionManager* auctionManager;
-        BankruptcyManager* bankruptcyManager;
-        PropertyManager* propertyManager;
-        CardManager* cardManager;
-        EffectManager* effectManager;
-        TransactionLogger* logger;
+        // Owned core services (Facade internals).
+        std::unique_ptr<Bank> bank;
+        std::unique_ptr<TransactionLogger> logger;
+        std::unique_ptr<CardManager> cardManager;
+        std::unique_ptr<EffectManager> effectManager;
+        std::unique_ptr<PropertyManager> propertyManager;
+        std::unique_ptr<AuctionManager> auctionManager;
+        std::unique_ptr<BankruptcyManager> bankruptcyManager;
 
         // ── Event buffer ───────────────────────────────────────────────────
         // Tile, Manager, dan kode lain di Core/Model layer TIDAK boleh
         // cout/cin langsung. Mereka push event/prompt ke buffer ini,
         // lalu engine flush ke CommandResult saat processCommand selesai.
-        vector<GameEvent>              pendingEvents_;
-        vector<PromptRequest>          pendingPrompts_;
+        std::vector<GameEvent> pendingEvents_;
+        std::vector<PromptRequest> pendingPrompts_;
 
         void initBoard();
         void handleJailTurn(Player& p);
         void awardPassGoSalary(Player& p);
-        vector<bool> buildBankruptFlags() const;
+        std::vector<bool> buildBankruptFlags() const;
         void resetTurnActionFlags();
+        CommandResult handlePendingSkillDropPrompt();
     
     public:
         GameEngine();
@@ -67,20 +68,14 @@ class GameEngine{
         GameEngine(const GameEngine&) = delete;
         GameEngine& operator=(const GameEngine&) = delete;
 
-        void setBank(Bank* b);
-        void setAuctionManager(AuctionManager* am);
-        void setBankruptcyManager(BankruptcyManager* bm);
-        void setPropertyManager(PropertyManager* pm);
-        void setCardManager(CardManager* cm);
-        void setEffectManager(EffectManager* em);
-        void setTransactionLogger(TransactionLogger* tl);
-
         // ── Event buffer API (dipakai oleh Tile & Manager) ────────────────
         void pushEvent(GameEventType type, UiTone tone,
                        const std::string& title, const std::string& msg);
+        void pushPrompt(const PromptRequest& prompt);
         void pushPrompt(const std::string& key, const std::string& msg,
                         const std::vector<std::string>& options = {},
-                        bool required = true);
+                        bool required = true,
+                        const std::string& title = "");
         // Flush semua pending event/prompt ke result, lalu bersihkan buffer
         void flushEvents(CommandResult& result);
         void setPendingContinuation(const std::function<CommandResult()>& continuation);
@@ -96,8 +91,8 @@ class GameEngine{
         void clearPromptAnswers();
 
         //Siklus permainan
-        CommandResult startNewGame(int nPlayers, vector<string> names);
-        CommandResult loadGame(const string& filename);
+        CommandResult startNewGame(int nPlayers, std::vector<std::string> names);
+        CommandResult loadGame(const std::string& filename);
         void run();
         CommandResult processCommand(const Command& cmd);
         CommandResult executeTurn();
@@ -108,9 +103,9 @@ class GameEngine{
 
         //akses state
         Player& getCurrentPlayer();
-        Player* getPlayerByName(const string& name);
-        vector<Player*> getActivePlayers() const;
-        const vector<Player*>& getPlayers() const;
+        Player* getPlayerByName(const std::string& name);
+        std::vector<Player*> getActivePlayers() const;
+        const std::vector<Player*>& getPlayers() const;
     
         Board& getBoard();
         Dice& getDice();

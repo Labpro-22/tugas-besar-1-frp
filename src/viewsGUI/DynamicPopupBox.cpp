@@ -5,6 +5,8 @@
 #include <sstream>
 
 namespace {
+constexpr const char* kPromptAnswerPrefix = "prompt_answer:";
+
 // Layout tuning point untuk DynamicPopupBox (1920x1080).
 // Ubah angka-angka di sini untuk geser posisi/ukuran komponen popup.
 struct PopupLayout {
@@ -270,6 +272,33 @@ void DynamicPopupBox::show(const PopupPayload& payload, ActionCallback onAction)
     layoutExpanded();
 }
 
+void DynamicPopupBox::showPrompt(const PromptRequest& prompt, ActionCallback onAnswer) {
+    PopupPayload payload;
+    payload.mode = PopupMode::INFO;
+    payload.headerTitle = prompt.title.empty() ? "PILIHAN" : prompt.title;
+    payload.cardTitle = payload.headerTitle;
+    payload.description = prompt.message;
+
+    for (const PromptOption& option : prompt.options) {
+        payload.actionItems.push_back(PopupActionItem{
+            std::string(kPromptAnswerPrefix) + option.key,
+            option.label.empty() ? option.key : option.label,
+            "assets/images/ui/btn_cancel.png",
+            true});
+    }
+
+    if (payload.actionItems.empty()) {
+        payload.actionItems.push_back(
+            PopupActionItem{std::string(kPromptAnswerPrefix), "OK", "assets/images/ui/btn_cancel.png", true});
+    }
+
+    show(payload, [onAnswer = std::move(onAnswer)](const std::string& actionId) {
+        if (actionId.rfind(kPromptAnswerPrefix, 0) == 0) {
+            onAnswer(actionId.substr(std::char_traits<char>::length(kPromptAnswerPrefix)));
+        }
+    });
+}
+
 void DynamicPopupBox::hide() {
     m_isVisible = false;
     m_isMinimized = false;
@@ -403,6 +432,10 @@ bool DynamicPopupBox::handleMouseReleased(sf::Vector2f mousePos) {
         }
 
         updateActionVisuals();
+
+        if (pressedIndex < 0 || pressedIndex >= static_cast<int>(m_actionSprites.size())) {
+            return false;
+        }
 
         const bool inside = m_actionSprites[static_cast<size_t>(pressedIndex)].sprite.getGlobalBounds().contains(mousePos);
         const bool enabled = m_actionSprites[static_cast<size_t>(pressedIndex)].enabled;
@@ -657,8 +690,10 @@ void DynamicPopupBox::updateActionVisuals() {
 }
 
 void DynamicPopupBox::invokeAction(const std::string& actionId) {
-    if (m_onAction) {
-        m_onAction(actionId);
+    // Copy callback first. Handler may call hide(), which resets m_onAction.
+    ActionCallback callback = m_onAction;
+    if (callback) {
+        callback(actionId);
     }
 }
 

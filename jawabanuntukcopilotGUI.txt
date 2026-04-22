@@ -1,0 +1,26 @@
+Untuk fase awal GUI, apakah kita sepakat scope aksi hanya LEMPAR_DADU dulu, sementara BANGUN/GADAI/PAKAI_KARTU ditampilkan disabled?
+- ya sepakat hanya lempat dadu, lalu bidak jalan
+
+Untuk BELI properti: Anda ingin mekanisme ini ditambahkan sekarang ke core (melalui CommandResult.prompt), atau ditunda sampai modul PropertyManager final?
+- ditunda dulu, fokus menampilkan alur game lempar dadu, next giliran, masuk penjara, bidak jalan
+
+Untuk BANGKRUT: sumber trigger yang diinginkan dari mana dulu? (utang sewa/pajak/penjara), mengingat beberapa flow tile masih TODO.
+- skip dulu nanti saja, tidak perlu ada bangkrut dulu
+
+Untuk animasi bidak: cukup animasi langsung dari posisi lama ke posisi akhir, atau wajib langkah per petak?
+- per petak
+
+Jika wajib langkah per petak, apakah saya boleh menambah payload movement pada CommandResult (misalnya fromIndex, toIndex, path)?
+- ya, boleh
+
+Untuk kartu skill pending-drop (kartu ke-4), apakah GUI harus langsung mendukung popup pilihan buang kartu pada milestone pertama?
+- pop up pilihan buang kartu
+
+Untuk tombol SAVE/LOAD: tetap ditampilkan sekarang (meski core belum final), atau disembunyikan dulu?
+- tampilkan saja meskipun belum berfungsi
+
+Struktur folder GUI yang Anda inginkan: include/viewsGUI + src/viewsGUI, dengan target executable terpisah game_gui. Setuju?
+- setuju 
+
+Font/assets: boleh saya siapkan fallback font sistem bila assets/fonts/Montserrat-Bold.ttf belum ada?
+- boleh
