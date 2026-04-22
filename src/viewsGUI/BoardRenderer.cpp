@@ -1,62 +1,260 @@
 #include "../../include/viewsGUI/BoardRenderer.hpp"
 
 #include "../../include/models/Board.hpp"
+#include "../../include/models/CardTile.hpp"
+#include "../../include/models/FestivalTile.hpp"
 #include "../../include/models/PropertyTile.hpp"
+#include "../../include/models/StreetProperty.hpp"
+#include "../../include/models/TaxTile.hpp"
 #include "../../include/viewsGUI/Theme.hpp"
+
+#include <algorithm>
+#include <cmath>
+#include <filesystem>
+
+namespace {
+constexpr float kCenterInset = 2.0f;
+constexpr float kTileBorderThickness = 1.0f;
+const sf::Color kTileBorderColor(52, 42, 26, 145);
+constexpr float kCenterBorderThickness = 2.0f;
+const sf::Color kCenterBorderColor(52, 42, 26, 190);
+
+constexpr float kStreetHeaderHeight = 18.0f;
+
+// Typography tuning block: adjust text position/sizing from one place.
+namespace Typography {
+constexpr float kHorizontalTextPadding = 8.0f;
+constexpr float kBottomPricePadding = 7.0f;
+
+constexpr float kStreetNameY = 26.0f;
+constexpr unsigned int kStreetNameMaxSize = 14;
+constexpr unsigned int kStreetNameMinSize = 8;
+constexpr unsigned int kStreetPriceMaxSize = 10;
+constexpr unsigned int kStreetPriceMinSize = 6;
+
+constexpr float kRailroadNameY = 15.0f;
+constexpr float kRailroadSecondLineOffsetY = 16.0f;
+constexpr unsigned int kRailroadNameMaxSize = 12;
+constexpr unsigned int kRailroadNameMinSize = 5;
+constexpr unsigned int kRailroadPriceMaxSize = 10;
+constexpr unsigned int kRailroadPriceMinSize = 6;
+
+constexpr unsigned int kUtilityPriceMaxSize = 10;
+constexpr unsigned int kUtilityPriceMinSize = 6;
+
+constexpr unsigned int kTaxPriceMaxSize = 10;
+constexpr unsigned int kTaxPriceMinSize = 6;
+} // namespace Typography
+} // namespace
 
 namespace viewsGUI {
 BoardRenderer::BoardRenderer(float boardSize, const sf::Font& font)
     : m_boardSize(boardSize),
       m_cornerSize(90.0f),
       m_tileSize(60.0f),
-    m_font(font),
-      m_tileTextures(40),
-      m_tileSprites(40) {}
+      m_defaultFont(font),
+      m_hasBebasFont(false),
+      m_renderCanvasesReady(false) {
+    m_hasBebasFont = m_bebasFont.loadFromFile("assets/fonts/BebasNeue-Regular.ttf");
+    if (!m_hasBebasFont) {
+        std::cerr << "[WARN] Font BebasNeue tidak ditemukan. Fallback ke font default GUI.\n";
+    }
+}
 
 bool BoardRenderer::loadAssets(const std::string& assetDirectory) {
     bool success = true;
-    const std::string baseDir =
+    m_assetBaseDir =
         (!assetDirectory.empty() && assetDirectory.back() == '/') ? assetDirectory
                                                                    : assetDirectory + "/";
 
-    if (!m_centerTexture.loadFromFile(baseDir + "center_board.png")) {
-        std::cerr << "[ERROR] Gagal memuat " << baseDir << "center_board.png\n";
+    if (!m_centerTexture.loadFromFile(m_assetBaseDir + "center_board.png")) {
+        std::cerr << "[ERROR] Gagal memuat " << m_assetBaseDir << "center_board.png\n";
         success = false;
     } else {
         m_centerSprite.setTexture(m_centerTexture);
-        m_centerSprite.setPosition(m_cornerSize, m_cornerSize);
+        m_centerSprite.setPosition(m_cornerSize + kCenterInset, m_cornerSize + kCenterInset);
 
         const float centerAreaSize = m_boardSize - (2.0f * m_cornerSize);
-        const sf::Vector2u centerTexSize = m_centerTexture.getSize();
-        if (centerTexSize.x > 0 && centerTexSize.y > 0) {
-            m_centerSprite.setScale(centerAreaSize / static_cast<float>(centerTexSize.x),
-                                    centerAreaSize / static_cast<float>(centerTexSize.y));
+        const float targetCenterSize = centerAreaSize - (2.0f * kCenterInset);
+        const sf::Vector2u centerSize = m_centerTexture.getSize();
+        if (centerSize.x > 0 && centerSize.y > 0) {
+            m_centerSprite.setScale(targetCenterSize / static_cast<float>(centerSize.x),
+                                    targetCenterSize / static_cast<float>(centerSize.y));
         }
     }
 
-    for (int i = 0; i < 40; ++i) {
-        const std::string filename = baseDir + "tile_" + std::to_string(i) + ".png";
-        if (!m_tileTextures[static_cast<size_t>(i)].loadFromFile(filename)) {
-            std::cerr << "[ERROR] Gagal memuat " << filename << "\n";
-            success = false;
-            continue;
-        }
-
-        m_tileSprites[static_cast<size_t>(i)].setTexture(m_tileTextures[static_cast<size_t>(i)]);
-
-        const sf::Vector2f targetSize = getTileSize(i);
-        const sf::Vector2f targetPos = getTilePosition(i);
-        const sf::Vector2u texSize = m_tileTextures[static_cast<size_t>(i)].getSize();
-
-        if (texSize.x > 0 && texSize.y > 0) {
-            m_tileSprites[static_cast<size_t>(i)].setScale(
-                targetSize.x / static_cast<float>(texSize.x),
-                targetSize.y / static_cast<float>(texSize.y));
-        }
-        m_tileSprites[static_cast<size_t>(i)].setPosition(targetPos);
+    if (!loadAllTileTextures()) {
+        success = false;
+    }
+    if (!initializeRenderCanvases()) {
+        success = false;
     }
 
     return success;
+}
+
+bool BoardRenderer::loadTexture(const std::string& key, const std::string& path) {
+    sf::Texture texture;
+    if (!texture.loadFromFile(path)) {
+        std::cerr << "[WARN] Gagal memuat aset tile: " << path << "\n";
+        return false;
+    }
+
+    m_textureByKey[key] = std::move(texture);
+    return true;
+}
+
+bool BoardRenderer::loadTexturesFromDirectory(const std::string& directoryPath,
+                                              const std::string& keyPrefix) {
+    namespace fs = std::filesystem;
+    bool success = true;
+
+    std::error_code ec;
+    if (!fs::exists(directoryPath, ec)) {
+        std::cerr << "[WARN] Folder aset tidak ditemukan: " << directoryPath << "\n";
+        return false;
+    }
+
+    for (const fs::directory_entry& entry : fs::directory_iterator(directoryPath, ec)) {
+        if (ec) {
+            std::cerr << "[WARN] Gagal membaca folder aset: " << directoryPath << "\n";
+            return false;
+        }
+        if (!entry.is_regular_file()) {
+            continue;
+        }
+
+        const fs::path filePath = entry.path();
+        if (filePath.extension() != ".png" && filePath.extension() != ".PNG") {
+            continue;
+        }
+
+        const std::string code = filePath.stem().string();
+        if (code.empty()) {
+            continue;
+        }
+
+        if (!loadTexture(keyPrefix + code, filePath.string())) {
+            success = false;
+        }
+    }
+
+    return success;
+}
+
+bool BoardRenderer::loadAllTileTextures() {
+    bool success = true;
+
+    if (!loadTexturesFromDirectory(m_assetBaseDir + "Property/Lahan", "street:")) {
+        success = false;
+    }
+    if (getTexture("street:DPK") == nullptr) {
+        std::cerr << "[WARN] Fallback texture street:DPK tidak ditemukan.\n";
+        success = false;
+    }
+
+    if (!loadTexturesFromDirectory(m_assetBaseDir + "Property/Utilitas", "utility:")) {
+        success = false;
+    }
+
+    if (!loadTexture("railroad", m_assetBaseDir + "Property/RAILROAD.png")) {
+        success = false;
+    }
+
+    if (!loadTexture("tax:PPH", m_assetBaseDir + "Action/Pajak/PPH.png")) {
+        success = false;
+    }
+    if (!loadTexture("tax:PBM", m_assetBaseDir + "Action/Pajak/PPNBM.png")) {
+        success = false;
+    }
+
+    if (!loadTexture("card:DNU", m_assetBaseDir + "Action/Kartu/DANA_UMUM.png")) {
+        success = false;
+    }
+    if (!loadTexture("card:KSP", m_assetBaseDir + "Action/Kartu/KESEMPATAN.png")) {
+        success = false;
+    }
+    if (!loadTexture("festival", m_assetBaseDir + "Action/FESTIVAL.png")) {
+        success = false;
+    }
+
+    if (!loadTexture("special:GO", m_assetBaseDir + "Action/Spesial/GO.png")) {
+        success = false;
+    }
+    if (!loadTexture("special:PEN", m_assetBaseDir + "Action/Spesial/PEN.png")) {
+        success = false;
+    }
+    if (!loadTexture("special:BBP", m_assetBaseDir + "Action/Spesial/BBP.png")) {
+        success = false;
+    }
+    if (!loadTexture("special:PPJ", m_assetBaseDir + "Action/Spesial/PPJ.png")) {
+        success = false;
+    }
+
+    return success;
+}
+
+bool BoardRenderer::initializeRenderCanvases() {
+    const bool portraitOk = m_portraitCanvas.create(static_cast<unsigned int>(std::round(m_tileSize)),
+                                                    static_cast<unsigned int>(std::round(m_cornerSize)));
+    const bool cornerOk = m_cornerCanvas.create(static_cast<unsigned int>(std::round(m_cornerSize)),
+                                                static_cast<unsigned int>(std::round(m_cornerSize)));
+    m_renderCanvasesReady = portraitOk && cornerOk;
+    if (!m_renderCanvasesReady) {
+        std::cerr << "[ERROR] Gagal membuat render canvas tile GUI.\n";
+    }
+    return m_renderCanvasesReady;
+}
+
+const sf::Texture* BoardRenderer::getTexture(const std::string& key) const {
+    const auto it = m_textureByKey.find(key);
+    if (it == m_textureByKey.end()) {
+        return nullptr;
+    }
+    return &it->second;
+}
+
+const sf::Texture* BoardRenderer::getStreetTextureWithFallback(const std::string& code) const {
+    const sf::Texture* exact = getTexture("street:" + code);
+    if (exact) {
+        return exact;
+    }
+    return getTexture("street:DPK");
+}
+
+const sf::Texture* BoardRenderer::resolveBaseTexture(const Tile& tile) const {
+    const std::string code = tile.getCode();
+
+    if (const auto* propertyTile = dynamic_cast<const PropertyTile*>(&tile)) {
+        const Property& property = propertyTile->getProperty();
+        if (property.getType() == PropertyType::STREET) {
+            return getStreetTextureWithFallback(property.getCode());
+        }
+        if (property.getType() == PropertyType::RAILROAD) {
+            return getTexture("railroad");
+        }
+        if (property.getType() == PropertyType::UTILITY) {
+            return getTexture("utility:" + property.getCode());
+        }
+    }
+
+    if (dynamic_cast<const TaxTile*>(&tile)) {
+        return getTexture(code == "PBM" ? "tax:PBM" : "tax:PPH");
+    }
+
+    if (dynamic_cast<const CardTile*>(&tile)) {
+        return getTexture(code == "KSP" ? "card:KSP" : "card:DNU");
+    }
+
+    if (dynamic_cast<const FestivalTile*>(&tile)) {
+        return getTexture("festival");
+    }
+
+    if (code == "GO" || code == "PEN" || code == "BBP" || code == "PPJ") {
+        return getTexture("special:" + code);
+    }
+
+    return nullptr;
 }
 
 sf::Vector2f BoardRenderer::getTilePosition(int index) const {
@@ -87,81 +285,293 @@ sf::Vector2f BoardRenderer::getTileCenter(int index) const {
     return {pos.x + (size.x / 2.0f), pos.y + (size.y / 2.0f)};
 }
 
-sf::Color BoardRenderer::resolveHeaderColor(int index) const {
-    if (index == 1 || index == 3) return Theme::Coklat;
-    if (index == 6 || index == 8 || index == 9) return Theme::BiruMuda;
-    if (index == 11 || index == 13 || index == 14) return Theme::Pink;
-    if (index == 16 || index == 18 || index == 19) return Theme::Oranye;
-    if (index == 21 || index == 23 || index == 24) return Theme::Merah;
-    if (index == 26 || index == 27 || index == 29) return Theme::Kuning;
-    if (index == 31 || index == 32 || index == 34) return Theme::Hijau;
-    if (index == 37 || index == 39) return Theme::BiruTua;
+bool BoardRenderer::isCornerIndex(int index) const {
+    return index % 10 == 0;
+}
+
+float BoardRenderer::getTileRotation(int index) const {
+    if (isCornerIndex(index)) {
+        return 0.0f;
+    }
+    if (index > 0 && index < 10) {
+        return 0.0f;
+    }
+    if (index > 10 && index < 20) {
+        return 90.0f;
+    }
+    if (index > 20 && index < 30) {
+        return 180.0f;
+    }
+    if (index > 30 && index < 40) {
+        return -90.0f;
+    }
+    return 0.0f;
+}
+
+BoardRenderer::TileRenderInfo BoardRenderer::buildTileRenderInfo(int index) const {
+    TileRenderInfo info;
+    info.worldPosition = getTilePosition(index);
+    info.worldSize = getTileSize(index);
+    info.rotationDeg = getTileRotation(index);
+    info.isCorner = isCornerIndex(index);
+    info.logicalSize = info.isCorner ? info.worldSize : sf::Vector2f(m_tileSize, m_cornerSize);
+    return info;
+}
+
+sf::Color BoardRenderer::resolveStreetColor(const std::string& colorGroup) const {
+    if (colorGroup == "COKLAT" || colorGroup == "CK") return Theme::Coklat;
+    if (colorGroup == "BIRU_MUDA" || colorGroup == "BM") return Theme::BiruMuda;
+    if (colorGroup == "MERAH_MUDA" || colorGroup == "PK") return Theme::Pink;
+    if (colorGroup == "ORANGE" || colorGroup == "OR") return Theme::Oranye;
+    if (colorGroup == "MERAH" || colorGroup == "MR") return Theme::Merah;
+    if (colorGroup == "KUNING" || colorGroup == "KN") return Theme::Kuning;
+    if (colorGroup == "HIJAU" || colorGroup == "HJ") return Theme::Hijau;
+    if (colorGroup == "BIRU_TUA" || colorGroup == "BT") return Theme::BiruTua;
     return sf::Color::Transparent;
 }
 
-void BoardRenderer::drawColorHeader(sf::RenderWindow& window,
-                                    int index,
-                                    sf::Color headerColor) const {
-    if (headerColor == sf::Color::Transparent || index % 10 == 0) {
-        return;
-    }
-
-    const sf::Vector2f pos = getTilePosition(index);
-    sf::RectangleShape headerShape;
-    headerShape.setFillColor(headerColor);
-    headerShape.setOutlineThickness(1.0f);
-    headerShape.setOutlineColor(sf::Color(0, 0, 0, 100));
-
-    const float headerThickness = 18.0f;
-
-    if (index > 0 && index < 10) {
-        headerShape.setSize({m_tileSize, headerThickness});
-        headerShape.setPosition(pos.x, pos.y);
-    } else if (index > 10 && index < 20) {
-        headerShape.setSize({headerThickness, m_tileSize});
-        headerShape.setPosition(pos.x + m_cornerSize - headerThickness, pos.y);
-    } else if (index > 20 && index < 30) {
-        headerShape.setSize({m_tileSize, headerThickness});
-        headerShape.setPosition(pos.x, pos.y + m_cornerSize - headerThickness);
-    } else if (index > 30 && index < 40) {
-        headerShape.setSize({headerThickness, m_tileSize});
-        headerShape.setPosition(pos.x, pos.y);
-    }
-
-    window.draw(headerShape);
+std::string BoardRenderer::normalizeDisplayText(const std::string& raw) const {
+    std::string out = raw;
+    std::replace(out.begin(), out.end(), '_', ' ');
+    return out;
 }
 
-void BoardRenderer::drawDynamicPrice(sf::RenderWindow& window,
-                                     int index,
-                                     const std::string& priceText) const {
-    if (index % 10 == 0 || priceText.empty()) {
+std::string BoardRenderer::toRailroadTwoLines(const std::string& raw) const {
+    const std::string normalized = normalizeDisplayText(raw);
+    const std::string prefix = "STASIUN ";
+    if (normalized.rfind(prefix, 0) == 0 && normalized.size() > prefix.size()) {
+        return "STASIUN\n" + normalized.substr(prefix.size());
+    }
+    return normalized;
+}
+
+unsigned int BoardRenderer::calculateAutoFontSize(const std::string& text,
+                                                  float maxWidth,
+                                                  unsigned int maxSize,
+                                                  unsigned int minSize) const {
+    const sf::Font& font = m_hasBebasFont ? m_bebasFont : m_defaultFont;
+    for (unsigned int size = maxSize; size >= minSize; --size) {
+        sf::Text preview(text, font, size);
+        const float width = preview.getLocalBounds().width;
+        if (width <= maxWidth || size == minSize) {
+            return size;
+        }
+    }
+    return minSize;
+}
+
+void BoardRenderer::drawCenteredText(sf::RenderTarget& target,
+                                     const std::string& text,
+                                     float centerX,
+                                     float centerY,
+                                     float maxWidth,
+                                     unsigned int maxSize,
+                                     unsigned int minSize,
+                                     const sf::Color& color,
+                                     float rotation) const {
+    const sf::Font& font = m_hasBebasFont ? m_bebasFont : m_defaultFont;
+    const unsigned int characterSize = calculateAutoFontSize(text, maxWidth, maxSize, minSize);
+
+    sf::Text drawText(text, font, characterSize);
+    drawText.setFillColor(color);
+
+    const sf::FloatRect bounds = drawText.getLocalBounds();
+    drawText.setOrigin(bounds.left + (bounds.width / 2.0f), bounds.top + (bounds.height / 2.0f));
+    drawText.setPosition(centerX, centerY);
+    drawText.setRotation(rotation);
+
+    target.draw(drawText);
+}
+
+void BoardRenderer::drawStreetTileContent(sf::RenderTexture& tileCanvas,
+                                          const Property& property,
+                                          const sf::Vector2f& logicalSize) const {
+    std::string colorGroup;
+    if (const auto* street = dynamic_cast<const StreetProperty*>(&property)) {
+        colorGroup = street->getColorGroup();
+    }
+
+    const sf::Color headerColor = resolveStreetColor(colorGroup);
+    if (headerColor != sf::Color::Transparent) {
+        sf::RectangleShape header({logicalSize.x, kStreetHeaderHeight});
+        header.setPosition(0.0f, 0.0f);
+        header.setFillColor(headerColor);
+        header.setOutlineThickness(1.0f);
+        header.setOutlineColor(sf::Color(0, 0, 0, 95));
+        tileCanvas.draw(header);
+    }
+
+    drawCenteredText(tileCanvas,
+                     normalizeDisplayText(property.getName()),
+                     logicalSize.x / 2.0f,
+                     Typography::kStreetNameY,
+                     logicalSize.x - Typography::kHorizontalTextPadding,
+                     Typography::kStreetNameMaxSize,
+                     Typography::kStreetNameMinSize,
+                     Theme::TextDark);
+
+    drawCenteredText(tileCanvas,
+                     std::to_string(property.getPurchasePrice()),
+                     logicalSize.x / 2.0f,
+                     logicalSize.y - Typography::kBottomPricePadding,
+                     logicalSize.x - Typography::kHorizontalTextPadding,
+                     Typography::kStreetPriceMaxSize,
+                     Typography::kStreetPriceMinSize,
+                     Theme::TextDark);
+}
+
+void BoardRenderer::drawRailroadTileContent(sf::RenderTexture& tileCanvas,
+                                            const Property& property,
+                                            const sf::Vector2f& logicalSize) const {
+    const std::string railroadName = toRailroadTwoLines(property.getName());
+    const size_t splitPos = railroadName.find('\n');
+
+    if (splitPos != std::string::npos) {
+        const std::string firstLine = railroadName.substr(0, splitPos);
+        const std::string secondLine = railroadName.substr(splitPos + 1);
+
+        drawCenteredText(tileCanvas,
+                         firstLine,
+                         logicalSize.x / 2.0f,
+                         Typography::kRailroadNameY,
+                         logicalSize.x - Typography::kHorizontalTextPadding,
+                         Typography::kRailroadNameMaxSize,
+                         Typography::kRailroadNameMinSize,
+                         Theme::TextDark);
+
+        drawCenteredText(tileCanvas,
+                         secondLine,
+                         logicalSize.x / 2.0f,
+                         Typography::kRailroadNameY + Typography::kRailroadSecondLineOffsetY,
+                         logicalSize.x - Typography::kHorizontalTextPadding,
+                         Typography::kRailroadNameMaxSize,
+                         Typography::kRailroadNameMinSize,
+                         Theme::TextDark);
+    } else {
+        drawCenteredText(tileCanvas,
+                         railroadName,
+                         logicalSize.x / 2.0f,
+                         Typography::kRailroadNameY,
+                         logicalSize.x - Typography::kHorizontalTextPadding,
+                         Typography::kRailroadNameMaxSize,
+                         Typography::kRailroadNameMinSize,
+                         Theme::TextDark);
+    }
+
+    drawCenteredText(tileCanvas,
+                     std::to_string(property.getPurchasePrice()),
+                     logicalSize.x / 2.0f,
+                     logicalSize.y - Typography::kBottomPricePadding,
+                     logicalSize.x - Typography::kHorizontalTextPadding,
+                     Typography::kRailroadPriceMaxSize,
+                     Typography::kRailroadPriceMinSize,
+                     Theme::TextDark);
+}
+
+void BoardRenderer::drawUtilityTileContent(sf::RenderTexture& tileCanvas,
+                                           const Property& property,
+                                           const sf::Vector2f& logicalSize) const {
+    drawCenteredText(tileCanvas,
+                     std::to_string(property.getPurchasePrice()),
+                     logicalSize.x / 2.0f,
+                     logicalSize.y - Typography::kBottomPricePadding,
+                     logicalSize.x - Typography::kHorizontalTextPadding,
+                     Typography::kUtilityPriceMaxSize,
+                     Typography::kUtilityPriceMinSize,
+                     Theme::TextDark);
+}
+
+void BoardRenderer::drawTaxTileContent(sf::RenderTexture& tileCanvas,
+                                       const TaxTile& taxTile,
+                                       const sf::Vector2f& logicalSize) const {
+    drawCenteredText(tileCanvas,
+                     std::to_string(taxTile.getFlatAmount()),
+                     logicalSize.x / 2.0f,
+                     logicalSize.y - Typography::kBottomPricePadding,
+                     logicalSize.x - Typography::kHorizontalTextPadding,
+                     Typography::kTaxPriceMaxSize,
+                     Typography::kTaxPriceMinSize,
+                     Theme::TextDark);
+}
+
+void BoardRenderer::drawTileContent(sf::RenderTexture& tileCanvas,
+                                    const Tile& tile,
+                                    const sf::Vector2f& logicalSize) const {
+    const sf::Texture* baseTexture = resolveBaseTexture(tile);
+    if (baseTexture) {
+        sf::Sprite sprite(*baseTexture);
+        const sf::Vector2u texSize = baseTexture->getSize();
+        if (texSize.x > 0 && texSize.y > 0) {
+            sprite.setScale(logicalSize.x / static_cast<float>(texSize.x),
+                            logicalSize.y / static_cast<float>(texSize.y));
+        }
+        tileCanvas.draw(sprite);
+    } else {
+        sf::RectangleShape placeholder(logicalSize);
+        placeholder.setFillColor(sf::Color(240, 228, 198));
+        tileCanvas.draw(placeholder);
+    }
+
+    if (const auto* propertyTile = dynamic_cast<const PropertyTile*>(&tile)) {
+        const Property& property = propertyTile->getProperty();
+        if (property.getType() == PropertyType::STREET) {
+            drawStreetTileContent(tileCanvas, property, logicalSize);
+        } else if (property.getType() == PropertyType::RAILROAD) {
+            drawRailroadTileContent(tileCanvas, property, logicalSize);
+        } else if (property.getType() == PropertyType::UTILITY) {
+            drawUtilityTileContent(tileCanvas, property, logicalSize);
+        }
         return;
     }
 
-    sf::Text text(priceText, m_font, 6);
-    text.setFillColor(Theme::TextDark);
+    if (const auto* taxTile = dynamic_cast<const TaxTile*>(&tile)) {
+        drawTaxTileContent(tileCanvas, *taxTile, logicalSize);
+        return;
+    }
+}
 
-    const sf::FloatRect bounds = text.getLocalBounds();
-    text.setOrigin(bounds.left + (bounds.width / 2.0f), bounds.top + (bounds.height / 2.0f));
+void BoardRenderer::drawTileBorder(sf::RenderWindow& window, int index) const {
+    const sf::Vector2f tilePos = getTilePosition(index);
+    const sf::Vector2f tileSize = getTileSize(index);
 
-    const sf::Vector2f pos = getTilePosition(index);
-    const sf::Vector2f size = getTileSize(index);
+    sf::RectangleShape tileBorder({tileSize.x - 1.0f, tileSize.y - 1.0f});
+    tileBorder.setPosition(tilePos.x + 0.5f, tilePos.y + 0.5f);
+    tileBorder.setFillColor(sf::Color::Transparent);
+    tileBorder.setOutlineThickness(kTileBorderThickness);
+    tileBorder.setOutlineColor(kTileBorderColor);
+    window.draw(tileBorder);
+}
 
-    if (index > 0 && index < 10) {
-        text.setRotation(0.0f);
-        text.setPosition(pos.x + (size.x / 2.0f) + 4.0f, pos.y + size.y - 8.0f);
-    } else if (index > 10 && index < 20) {
-        text.setRotation(90.0f);
-        text.setPosition(pos.x + 8.0f, pos.y + (size.y / 2.0f) + 4.0f);
-    } else if (index > 20 && index < 30) {
-        text.setRotation(180.0f);
-        text.setPosition(pos.x + (size.x / 2.0f) - 4.0f, pos.y + 8.0f);
-    } else if (index > 30 && index < 40) {
-        text.setRotation(270.0f);
-        text.setPosition(pos.x + size.x - 8.0f, pos.y + (size.y / 2.0f) - 4.0f);
+void BoardRenderer::drawCenterBorder(sf::RenderWindow& window) const {
+    const float centerSize = m_boardSize - (2.0f * m_cornerSize);
+    sf::RectangleShape centerBorder({centerSize - 1.0f, centerSize - 1.0f});
+    centerBorder.setPosition(m_cornerSize + 0.5f, m_cornerSize + 0.5f);
+    centerBorder.setFillColor(sf::Color::Transparent);
+    centerBorder.setOutlineThickness(kCenterBorderThickness);
+    centerBorder.setOutlineColor(kCenterBorderColor);
+    window.draw(centerBorder);
+}
+
+void BoardRenderer::drawTile(sf::RenderWindow& window, const Tile& tile, int index) const {
+    const TileRenderInfo info = buildTileRenderInfo(index);
+    if (!m_renderCanvasesReady) {
+        drawTileBorder(window, index);
+        return;
     }
 
-    window.draw(text);
+    sf::RenderTexture& tileCanvas = info.isCorner ? m_cornerCanvas : m_portraitCanvas;
+    tileCanvas.clear(sf::Color::Transparent);
+    drawTileContent(tileCanvas, tile, info.logicalSize);
+    tileCanvas.display();
+
+    sf::Sprite tileSprite(tileCanvas.getTexture());
+    tileSprite.setOrigin(info.logicalSize.x / 2.0f, info.logicalSize.y / 2.0f);
+    tileSprite.setPosition(info.worldPosition.x + (info.worldSize.x / 2.0f),
+                           info.worldPosition.y + (info.worldSize.y / 2.0f));
+    tileSprite.setRotation(info.rotationDeg);
+
+    window.draw(tileSprite);
+    drawTileBorder(window, index);
 }
 
 void BoardRenderer::render(sf::RenderWindow& window, const Board& board) const {
@@ -170,31 +580,15 @@ void BoardRenderer::render(sf::RenderWindow& window, const Board& board) const {
     window.draw(boardBg);
     window.draw(m_centerSprite);
 
-    const int tileCount = board.size();
-    for (int i = 0; i < 40; ++i) {
-        window.draw(m_tileSprites[static_cast<size_t>(i)]);
-
-        const sf::Color color = resolveHeaderColor(i);
-        drawColorHeader(window, i, color);
-
-        if (i >= tileCount) {
-            continue;
-        }
-
-        const Tile& tile = board.getTileByIndex(i);
-        if (!tile.isProperty()) {
-            continue;
-        }
-
-        const auto* propertyTile = dynamic_cast<const PropertyTile*>(&tile);
-        if (!propertyTile) {
-            continue;
-        }
-
-        const int purchasePrice = propertyTile->getProperty().getPurchasePrice();
-        if (purchasePrice > 0) {
-            drawDynamicPrice(window, i, std::to_string(purchasePrice));
-        }
+    const int tileCount = std::min(40, board.size());
+    for (int index = 0; index < tileCount; ++index) {
+        drawTile(window, board.getTileByIndex(index), index);
     }
+
+    for (int index = tileCount; index < 40; ++index) {
+        drawTileBorder(window, index);
+    }
+
+    drawCenterBorder(window);
 }
 } // namespace viewsGUI

@@ -280,6 +280,12 @@ void SfmlGuiManager::run() {
     while (m_window.isOpen()) {
         const sf::Time dt = clock.restart();
         processEvents();
+
+        // Prevent touching a closed SFML window in update/render on shutdown.
+        if (!m_window.isOpen()) {
+            break;
+        }
+
         update(dt);
         render();
     }
