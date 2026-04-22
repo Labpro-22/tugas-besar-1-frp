@@ -11,11 +11,12 @@
 #include "../core/CommandResult.hpp"
 #include "BoardRenderer.hpp"
 #include "DiceRenderer.hpp"
+#include "DynamicPopupBox.hpp"
 #include "MainUI.hpp"
 #include "PieceRenderer.hpp"
-#include "PopupBox.hpp"
 
 class GameEngine;
+class Property;
 
 namespace viewsGUI {
 enum class GuiState { IDLE, ANIMATING, WAITING_CONFIRMATION };
@@ -37,11 +38,12 @@ private:
     std::unique_ptr<BoardRenderer> m_boardView;
     std::unique_ptr<MainUI> m_mainUi;
     std::unique_ptr<DiceRenderer> m_diceRenderer;
-    std::unique_ptr<PopupBox> m_popupBox;
+    std::unique_ptr<DynamicPopupBox> m_popupBox;
     std::vector<std::unique_ptr<PieceRenderer>> m_players;
 
     std::string m_lastMessage;
     std::optional<PromptRequest> m_deferredPrompt;
+    std::optional<MovementPayload> m_deferredMovement;
 
     void processEvents();
     void update(sf::Time dt);
@@ -61,6 +63,13 @@ private:
     void consumeResult(const CommandResult& result, bool syncPiecePositions);
     void handlePromptIfAny(const CommandResult& result);
     void handlePromptRequest(const PromptRequest& prompt);
+    void showLandingPopup(const MovementPayload& movement);
+    void handlePopupAction(const std::string& actionId);
+    PopupPayload buildLandingPayload(const MovementPayload& movement) const;
+    PopupPayload buildSkillDropPayload(const PromptRequest& prompt) const;
+    std::vector<int> buildDummyRentRows(const Property& property) const;
+    sf::Color resolvePropertyColor(const Property& property) const;
+    void resumeFlowAfterPopup();
 };
 } // namespace viewsGUI
 
