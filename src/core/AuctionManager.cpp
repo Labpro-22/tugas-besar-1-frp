@@ -4,11 +4,18 @@
 #include "../../include/models/Bank.hpp"
 #include "../../include/models/Player.hpp"
 #include "../../include/models/Property.hpp"
-#include "../../include/utils/GameException.hpp"
 
-#include <iostream>
 #include <algorithm>
+#include <cctype>
 #include <sstream>
+
+namespace {
+std::string normalizeAuctionInput(std::string text) {
+    std::transform(text.begin(), text.end(), text.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::toupper(c)); });
+    return text;
+}
+}
 
 AuctionManager::AuctionManager(GameEngine& engine, Bank& bank,
                                TransactionLogger& logger)
@@ -19,17 +26,17 @@ AuctionManager::AuctionManager(GameEngine& engine, Bank& bank,
       highestBidder(nullptr),
       highestBid(0),
       consecutivePasses(0),
-      atLeastOneBid(false) {}
-
+      atLeastOneBid(false),
+      auctionActive(false),
+      currentAuctionIndex(0) {}
 
 std::vector<Player*> AuctionManager::buildAuctionOrder(
-    Player* triggerPlayer, bool excludeBankrupt) const
-{
-    std::vector<Player*> allActive = engine.getActivePlayers();
-    std::vector<Player*> order;
+    Player* triggerPlayer, bool excludeBankrupt) const {
+    (void)excludeBankrupt;
 
+    std::vector<Player*> allActive = engine.getActivePlayers();
     int triggerIdx = -1;
-    for (int i = 0; i < static_cast<int>(allActive.size()); i++) {
+    for (int i = 0; i < static_cast<int>(allActive.size()); ++i) {
         if (allActive[i] == triggerPlayer) {
             triggerIdx = i;
             break;
@@ -40,159 +47,193 @@ std::vector<Player*> AuctionManager::buildAuctionOrder(
         return allActive;
     }
 
-    int n = static_cast<int>(allActive.size());
-    for (int i = 1; i <= n; i++) {
-        int idx = (triggerIdx + i) % n;
-        order.push_back(allActive[idx]);
+    std::vector<Player*> order;
+    const int n = static_cast<int>(allActive.size());
+    for (int i = 1; i <= n; ++i) {
+        order.push_back(allActive[(triggerIdx + i) % n]);
     }
-
     return order;
 }
 
 void AuctionManager::resetState() {
-    auctionedProp      = nullptr;
-    highestBidder      = nullptr;
-    highestBid         = 0;
-    consecutivePasses  = 0;
-    atLeastOneBid      = false;
-}
-
-bool AuctionManager::processTurn(Player& current, int totalActivePlayers) {
-    int passesNeeded = totalActivePlayers - 1;
-
-    std::cout << "\nGiliran: " << current.getUsername() << "\n";
-    std::cout << "Penawaran tertinggi saat ini: M" << highestBid;
-    if (highestBidder) {
-        std::cout << " (" << highestBidder->getUsername() << ")";
-    }
-    std::cout << "\n";
-    std::cout << "Uang kamu: M" << current.getMoney() << "\n";
-
-
-    bool mustBid = (!atLeastOneBid &&
-                    consecutivePasses == totalActivePlayers - 1);
-
-    if (mustBid) {
-        std::cout << "[INFO] Kamu wajib melakukan bid minimal sekali!\n";
-    }
-
-    std::cout << "Aksi (PASS / BID <jumlah>): ";
-
-    std::string input;
-    std::getline(std::cin >> std::ws, input);
-
-    if (input == "PASS" || input == "pass") {
-        if (mustBid) {
-            std::cout << "Kamu wajib melakukan bid! Tidak bisa PASS sekarang.\n";
-            return processTurn(current, totalActivePlayers);
-        }
-        consecutivePasses++;
-        std::cout << current.getUsername() << " memilih PASS.\n";
-
-        if (consecutivePasses >= passesNeeded && atLeastOneBid) {
-            return true; 
-            // Auction is over
-        }
-        return false;
-
-    } else if (input.size() > 4 &&
-               (input.substr(0, 4) == "BID " || input.substr(0, 4) == "bid ")) {
-        int bidAmount = 0;
-        try {
-            bidAmount = std::stoi(input.substr(4));
-        } catch (...) {
-            std::cout << "Input tidak valid. Masukkan BID <angka> atau PASS.\n";
-            return processTurn(current, totalActivePlayers);
-        }
-
-        if (bidAmount <= highestBid) {
-            std::cout << "Bid harus lebih tinggi dari bid tertinggi saat ini (M"
-                      << highestBid << ").\n";
-            return processTurn(current, totalActivePlayers);
-        }
-
-        if (!current.canAfford(bidAmount)) {
-            std::cout << "Uang kamu tidak cukup untuk bid M" << bidAmount
-                      << ". Uang kamu: M" << current.getMoney() << "\n";
-            return processTurn(current, totalActivePlayers);
-        }
-
-        // Update highest bid
-        highestBid     = bidAmount;
-        highestBidder  = &current;
-        atLeastOneBid  = true;
-        consecutivePasses = 0; 
-
-        logger.logAuctionBid(current.getUsername(),
-                             auctionedProp->getCode(), bidAmount);
-
-        std::cout << "Penawaran tertinggi: M" << highestBid
-                  << " (" << highestBidder->getUsername() << ")\n";
-        return false;
-
-    } else {
-        std::cout << "Input tidak valid. Ketik PASS atau BID <jumlah>.\n";
-        return processTurn(current, totalActivePlayers);
-    }
+    auctionedProp = nullptr;
+    highestBidder = nullptr;
+    highestBid = 0;
+    consecutivePasses = 0;
+    atLeastOneBid = false;
+    auctionActive = false;
+    currentAuctionIndex = 0;
+    auctionOrder.clear();
 }
 
 void AuctionManager::finalizeAuction() {
-    if (!highestBidder || !auctionedProp) return;
-
-    bank.receivePayment(*highestBidder, highestBid);
-    bank.transferPropertyToPlayer(auctionedProp, *highestBidder);
-
-    logger.logAuctionResult(highestBidder->getUsername(),
-                            auctionedProp->getCode(), highestBid);
-
-    std::cout << "\n=== Lelang Selesai! ===\n";
-    std::cout << "Pemenang  : " << highestBidder->getUsername() << "\n";
-    std::cout << "Harga akhir: M" << highestBid << "\n";
-    std::cout << "Properti " << auctionedProp->getName()
-              << " (" << auctionedProp->getCode() << ") kini dimiliki "
-              << highestBidder->getUsername() << ".\n";
-}
-
-
-void AuctionManager::startAuction(Property& prop,
-                                   Player* triggerPlayer,
-                                   bool excludeBankrupt)
-{
-    resetState();
-    auctionedProp = &prop;
-
-    std::cout << "\nProperti " << prop.getName()
-              << " (" << prop.getCode() << ") akan dilelang!\n";
-
-    std::vector<Player*> order = buildAuctionOrder(triggerPlayer, excludeBankrupt);
-
-    if (order.empty()) {
-        std::cout << "Tidak ada pemain yang bisa ikut lelang.\n";
+    if (!highestBidder || !auctionedProp) {
+        engine.pushEvent(GameEventType::AUCTION, UiTone::WARNING,
+            "Lelang Berakhir",
+            "Lelang selesai tanpa pemenang.");
+        resetState();
         return;
     }
 
-    int totalActive = static_cast<int>(order.size());
+    bank.receivePayment(*highestBidder, highestBid);
+    bank.transferPropertyToPlayer(auctionedProp, *highestBidder);
+    logger.logAuctionResult(highestBidder->getUsername(),
+                            auctionedProp->getCode(), highestBid);
+    engine.pushEvent(GameEventType::AUCTION, UiTone::SUCCESS,
+        "Lelang Selesai",
+        "Properti " + auctionedProp->getName() + " terjual kepada " + highestBidder->getUsername() + " dengan harga M" + std::to_string(highestBid) + "!");
+    resetState();
+}
 
-    std::cout << "Urutan lelang dimulai dari pemain setelah "
-              << (triggerPlayer ? triggerPlayer->getUsername() : "N/A")
-              << ".\n";
+void AuctionManager::continueAuction() {
+    if (!auctionActive || !auctionedProp) {
+        return;
+    }
 
-    bool auctionDone = false;
-    while (!auctionDone) {
-        for (Player* current : order) {
-            if (!current || current->isBankrupt()) continue;
-
-            bool done = processTurn(*current, totalActive);
-            if (done) {
-                auctionDone = true;
-                break;
-            }
+    while (auctionActive) {
+        if (auctionOrder.empty()) {
+            engine.pushEvent(GameEventType::AUCTION, UiTone::WARNING,
+                "Lelang Batal", "Tidak ada pemain yang dapat ikut lelang.");
+            resetState();
+            return;
         }
 
-        if (!auctionDone && !atLeastOneBid) {
+        if (currentAuctionIndex >= static_cast<int>(auctionOrder.size())) {
+            currentAuctionIndex = 0;
+        }
+
+        Player* current = auctionOrder[currentAuctionIndex];
+        if (!current || current->isBankrupt()) {
+            currentAuctionIndex =
+                (currentAuctionIndex + 1) % static_cast<int>(auctionOrder.size());
             continue;
         }
+
+        const int totalActive = static_cast<int>(auctionOrder.size());
+        const int passesNeeded = std::max(0, totalActive - 1);
+        const bool mustBid = (!atLeastOneBid && consecutivePasses >= passesNeeded);
+
+        std::ostringstream info;
+        info << "--\n\nPenawaran tertinggi saat ini: M" << highestBid;
+        if (highestBidder) {
+            info << " (" << highestBidder->getUsername() << ")";
+        }
+        info << "\n\nGiliran " << current->getUsername() << " (Uang: M" << current->getMoney() << "):\n";
+        if (mustBid) {
+            info << "[INFO] Pemain ini wajib BID minimal sekali.\n";
+        }
+        engine.pushEvent(GameEventType::AUCTION, UiTone::INFO,
+            "Giliran Lelang", info.str());
+
+        const std::string promptKey =
+            "lelang_" + current->getUsername() + "_" +
+            std::to_string(currentAuctionIndex) + "_" +
+            std::to_string(highestBid) + "_" +
+            std::to_string(consecutivePasses);
+
+        if (!engine.hasPromptAnswer(promptKey)) {
+            std::vector<std::string> options;
+            if (!mustBid) {
+                options.push_back("PASS");
+            }
+            options.push_back("BID <jumlah>");
+
+            engine.pushPrompt(
+                promptKey,
+                "Apakah ingin mengajukan tawaran? (B/P):",
+                options);
+            engine.setPendingContinuation([this]() {
+                CommandResult resumed;
+                continueAuction();
+                return resumed;
+            });
+            return;
+        }
+
+        const std::string input =
+            normalizeAuctionInput(engine.consumePromptAnswer(promptKey));
+
+        if (input == "PASS") {
+            if (mustBid) {
+                engine.pushEvent(GameEventType::AUCTION, UiTone::WARNING,
+                    "Tidak Bisa PASS", "Minimal harus ada satu bid di lelang ini.");
+                continue;
+            }
+
+            ++consecutivePasses;
+            engine.pushEvent(GameEventType::AUCTION, UiTone::INFO,
+                "PASS", current->getUsername() + " memilih untuk pass.");
+
+            if (atLeastOneBid && consecutivePasses >= passesNeeded) {
+                finalizeAuction();
+                return;
+            }
+
+            currentAuctionIndex =
+                (currentAuctionIndex + 1) % static_cast<int>(auctionOrder.size());
+            continue;
+        }
+
+        if (input.rfind("BID ", 0) == 0) {
+            int bidAmount = 0;
+            try {
+                bidAmount = std::stoi(input.substr(4));
+            } catch (const std::exception&) {
+                engine.pushEvent(GameEventType::AUCTION, UiTone::WARNING,
+                    "Input Tidak Valid", "Format bid harus: BID <angka>.");
+                continue;
+            }
+
+            if (bidAmount <= highestBid) {
+                engine.pushEvent(GameEventType::AUCTION, UiTone::WARNING,
+                    "Bid Terlalu Rendah",
+                    "Bid harus lebih besar dari M" +
+                        std::to_string(highestBid) + ".");
+                continue;
+            }
+
+            if (!current->canAfford(bidAmount)) {
+                engine.pushEvent(GameEventType::AUCTION, UiTone::WARNING,
+                    "Uang Tidak Cukup",
+                    "Bid M" + std::to_string(bidAmount) +
+                        " melebihi uang tunai pemain.");
+                continue;
+            }
+
+            highestBid = bidAmount;
+            highestBidder = current;
+            atLeastOneBid = true;
+            consecutivePasses = 0;
+            logger.logAuctionBid(current->getUsername(),
+                                 auctionedProp->getCode(), bidAmount);
+            engine.pushEvent(GameEventType::AUCTION, UiTone::SUCCESS,
+                "Bid Diterima",
+                current->getUsername() + " mengajukan tawaran sebesar M" + std::to_string(bidAmount) + "!");
+
+            currentAuctionIndex =
+                (currentAuctionIndex + 1) % static_cast<int>(auctionOrder.size());
+            continue;
+        }
+
+        engine.pushEvent(GameEventType::AUCTION, UiTone::WARNING,
+            "Input Tidak Valid", "Masukkan PASS atau BID <jumlah>.");
     }
-    
-    finalizeAuction();
+}
+
+void AuctionManager::startAuction(Property& prop,
+                                  Player* triggerPlayer,
+                                  bool excludeBankrupt) {
+    if (!auctionActive) {
+        resetState();
+        auctionedProp = &prop;
+        auctionOrder = buildAuctionOrder(triggerPlayer, excludeBankrupt);
+        auctionActive = true;
+        currentAuctionIndex = 0;
+
+        engine.pushEvent(GameEventType::AUCTION, UiTone::INFO,
+            "Lelang Dimulai",
+            "Properti " + prop.getName() + " masuk sistem lelang...\n\nLelang dimulai!");
+    }
+
+    continueAuction();
 }

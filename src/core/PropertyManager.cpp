@@ -1,18 +1,17 @@
 #include "../../include/core/PropertyManager.hpp"
+#include "../../include/core/AuctionManager.hpp"
 #include "../../include/core/GameEngine.hpp"
 #include "../../include/core/TransactionLogger.hpp"
-#include "../../include/core/AuctionManager.hpp"
 #include "../../include/models/Bank.hpp"
-#include "../../include/models/Player.hpp"
-#include "../../include/models/Property.hpp"
-#include "../../include/models/StreetProperty.hpp"
-#include "../../include/models/RailroadProperty.hpp"
-#include "../../include/models/UtilityProperty.hpp"
 #include "../../include/models/Board.hpp"
 #include "../../include/models/GameContext.hpp"
+#include "../../include/models/Player.hpp"
+#include "../../include/models/Property.hpp"
+#include "../../include/models/RailroadProperty.hpp"
+#include "../../include/models/StreetProperty.hpp"
+#include "../../include/models/UtilityProperty.hpp"
 #include "../../include/utils/GameException.hpp"
 
-#include <iostream>
 #include <algorithm>
 #include <sstream>
 
@@ -20,17 +19,16 @@ PropertyManager::PropertyManager(GameEngine& engine, Bank& bank,
                                  TransactionLogger& logger)
     : engine(engine), bank(bank), logger(logger) {}
 
-
 std::vector<StreetProperty*> PropertyManager::getColorGroup(
-    const std::string& colorGroup) const
-{
+    const std::string& colorGroup) const {
     std::vector<StreetProperty*> result;
-    Board& board = engine.getBoard();
-    auto propTiles = board.getAllPropertyTiles();
-    for (auto* tile : propTiles) {
+    for (auto* tile : engine.getBoard().getAllPropertyTiles()) {
         Property* prop = &tile->getProperty();
-        if (!prop || prop->getType() != PropertyType::STREET) continue;
-        StreetProperty* sp = static_cast<StreetProperty*>(prop);
+        if (prop->getType() != PropertyType::STREET) {
+            continue;
+        }
+
+        auto* sp = static_cast<StreetProperty*>(prop);
         if (sp->getColorGroup() == colorGroup) {
             result.push_back(sp);
         }
@@ -39,21 +37,23 @@ std::vector<StreetProperty*> PropertyManager::getColorGroup(
 }
 
 bool PropertyManager::hasMonopoly(const Player& player,
-                                   const std::string& colorGroup) const
-{
+                                  const std::string& colorGroup) const {
     auto group = getColorGroup(colorGroup);
-    if (group.empty()) return false;
+    if (group.empty()) {
+        return false;
+    }
+
     for (auto* sp : group) {
-        if (sp->getOwner() != &player) return false;
+        if (sp->getOwner() != &player) {
+            return false;
+        }
     }
     return true;
 }
 
 bool PropertyManager::hasBuildingsInColorGroup(
-    const Player& player, const std::string& colorGroup) const
-{
-    auto group = getColorGroup(colorGroup);
-    for (auto* sp : group) {
+    const Player& player, const std::string& colorGroup) const {
+    for (auto* sp : getColorGroup(colorGroup)) {
         if (sp->getOwner() == &player &&
             sp->getBuildingLevel() != BuildingLevel::NONE) {
             return true;
@@ -63,363 +63,411 @@ bool PropertyManager::hasBuildingsInColorGroup(
 }
 
 void PropertyManager::sellAllBuildingsInColorGroup(
-    Player& player, const std::string& colorGroup)
-{
-    auto group = getColorGroup(colorGroup);
-    for (auto* sp : group) {
-        if (sp->getOwner() != &player) continue;
-        if (sp->getBuildingLevel() == BuildingLevel::NONE) continue;
+    Player& player, const std::string& colorGroup) {
+    for (auto* sp : getColorGroup(colorGroup)) {
+        if (sp->getOwner() != &player) {
+            continue;
+        }
+        if (sp->getBuildingLevel() == BuildingLevel::NONE) {
+            continue;
+        }
 
         int proceeds = sp->getBuildingSellValue();
         sp->demolishBuildings();
         bank.sendMoney(player, proceeds);
         logger.logSellBuilding(player.getUsername(), sp->getCode(), proceeds);
-
-        std::cout << "Bangunan " << sp->getName()
-                  << " terjual. Kamu menerima M" << proceeds << ".\n";
+        engine.pushEvent(GameEventType::PROPERTY, UiTone::INFO,
+            "Jual Bangunan",
+            sp->getName() + " terjual. Kamu menerima M" +
+            std::to_string(proceeds) + ".");
     }
 }
 
 int PropertyManager::computeRent(const Property& prop,
-                                  const GameContext& ctx) const
-{
+                                 const GameContext& ctx) const {
     return prop.calculateRent(ctx);
 }
 
-// Buy properties
 bool PropertyManager::offerPurchase(Player& buyer, Property& prop) {
-    int price = prop.getPurchasePrice();
+    const int price = prop.getPurchasePrice();
+    const std::string promptKey = "beli_" + prop.getCode();
 
-    std::cout << "\nKamu mendarat di " << prop.getName()
-              << " (" << prop.getCode() << ")!\n";
-    std::cout << "+================================+\n";
-    std::cout << "| Harga Beli : M" << price << "\n";
-    std::cout << "| Nilai Gadai: M" << prop.getMortgageValue() << "\n";
-
-    if (prop.getType() == PropertyType::STREET) {
-        StreetProperty* sp = static_cast<StreetProperty*>(&prop);
-        const auto& rentLevels = sp->getColorGroup(); // hanya untuk info
-        std::cout << "| Color Group: " << sp->getColorGroup() << "\n";
+    if (!engine.hasPromptAnswer(promptKey)) {
+        std::ostringstream info;
+        // Akta isn't fully drawn here in original either, let's keep it close but with exact words
+        info << "Uang kamu saat ini: M" << buyer.getMoney();
+        engine.pushEvent(GameEventType::PROPERTY, UiTone::INFO,
+            "Mendarat di " + prop.getCode(), info.str());
     }
-    std::cout << "+================================+\n";
-    std::cout << "Uang kamu saat ini: M" << buyer.getMoney() << "\n";
 
     if (!buyer.canAfford(price)) {
-        std::cout << "Uang kamu tidak cukup untuk membeli properti ini.\n";
-        std::cout << "Properti ini akan masuk ke sistem lelang...\n";
+        engine.pushEvent(GameEventType::PROPERTY, UiTone::WARNING,
+            "Tidak Cukup Uang", "Properti masuk lelang.");
         return false;
     }
 
-    std::cout << "Apakah kamu ingin membeli properti ini seharga M"
-              << price << "? (y/n): ";
-    char choice;
-    std::cin >> choice;
+    if (!engine.hasPromptAnswer(promptKey)) {
+        engine.pushPrompt(
+            promptKey,
+            "Apakah kamu ingin membeli properti ini seharga M" + std::to_string(price) + "? (y/n):",
+            {"y", "n"});
+        engine.setPendingContinuation([this, &buyer, &prop]() {
+            CommandResult resumed;
+            if (!offerPurchase(buyer, prop)) {
+                engine.getAuctionManager().startAuction(prop, &buyer, true);
+            }
+            return resumed;
+        });
+        return false;
+    }
 
-    if (choice != 'y' && choice != 'Y') {
-        std::cout << "Properti ini akan masuk ke sistem lelang...\n";
+    const std::string answer = engine.consumePromptAnswer(promptKey);
+    if (answer != "y" && answer != "Y") {
+        engine.pushEvent(GameEventType::PROPERTY, UiTone::INFO,
+            "Tidak Jadi Beli", "Properti masuk sistem lelang...");
         return false;
     }
 
     bank.receivePayment(buyer, price);
     bank.transferPropertyToPlayer(&prop, buyer);
-
     logger.logBuy(buyer.getUsername(), prop.getName(), prop.getCode(), price);
-
-    std::cout << prop.getName() << " kini menjadi milikmu!\n";
-    std::cout << "Uang tersisa: M" << buyer.getMoney() << "\n";
+    engine.pushEvent(GameEventType::PROPERTY, UiTone::SUCCESS,
+        "Beli Properti",
+        prop.getName() + " kini menjadi milikmu!\nUang tersisa: M" +
+        std::to_string(buyer.getMoney()));
     return true;
 }
 
-// Get Railroad & Utility 
 void PropertyManager::autoAcquire(Player& player, Property& prop) {
-    std::string typeStr = (prop.getType() == PropertyType::RAILROAD)
-                          ? "RAILROAD" : "UTILITY";
-
+    std::string typeStr =
+        (prop.getType() == PropertyType::RAILROAD) ? "RAILROAD" : "UTILITY";
     bank.transferPropertyToPlayer(&prop, player);
     logger.logAutoAcquire(player.getUsername(), prop.getName(),
                           prop.getCode(), typeStr);
-
-    if (prop.getType() == PropertyType::RAILROAD) {
-        std::cout << "Kamu mendarat di " << prop.getName() << "!\n";
-        std::cout << "Belum ada yang menginjaknya duluan, stasiun ini "
-                     "kini menjadi milikmu!\n";
-    } else {
-        std::cout << "Kamu mendarat di " << prop.getName() << "!\n";
-        std::cout << "Belum ada yang menginjaknya duluan, "
-                  << prop.getName() << " kini menjadi milikmu!\n";
-    }
+    engine.pushEvent(GameEventType::PROPERTY, UiTone::SUCCESS,
+        "Dapat " + typeStr,
+        prop.getName() + " kini milik " + player.getUsername() +
+        " (otomatis).");
 }
 
-// Pay Rent
 void PropertyManager::payRent(Player& payer, Property& prop,
-                               const GameContext& ctx)
-{
+                              const GameContext& ctx) {
     if (prop.isMortgaged()) {
-        std::cout << "Kamu mendarat di " << prop.getName()
-                  << ", milik " << prop.getOwner()->getUsername() << ".\n";
-        std::cout << "Properti ini sedang digadaikan [M]. "
-                     "Tidak ada sewa yang dikenakan.\n";
+        engine.pushEvent(GameEventType::PROPERTY, UiTone::INFO,
+            "Properti Digadai",
+            prop.getName() + " sedang digadaikan [M]. Tidak ada sewa.");
         return;
     }
 
     Player* owner = prop.getOwner();
-    if (!owner || owner == &payer) return; 
+    if (!owner || owner == &payer) {
+        return;
+    }
 
     if (payer.isShieldActive()) {
-        std::cout << "[SHIELD ACTIVE]: Efek ShieldCard melindungi kamu!\n";
-        std::cout << "Tagihan sewa dibatalkan.\n";
+        engine.pushEvent(GameEventType::CARD, UiTone::SUCCESS,
+            "Shield Aktif",
+            "ShieldCard melindungi dari sewa di " + prop.getCode() + ".");
         return;
     }
 
     int rent = computeRent(prop, ctx);
-
-    std::cout << "\nKamu mendarat di " << prop.getName()
-              << " (" << prop.getCode() << "), milik "
-              << owner->getUsername() << "!\n";
-    std::cout << "Sewa : M" << rent << "\n";
-    std::cout << "Uang kamu : M" << payer.getMoney()
-              << " -> M" << (payer.getMoney() - rent) << "\n";
-    std::cout << "Uang " << owner->getUsername() << " : M"
-              << owner->getMoney() << " -> M"
-              << (owner->getMoney() + rent) << "\n";
-
     if (!payer.canAfford(rent)) {
-        std::cout << "Kamu tidak mampu membayar sewa penuh! (M" << rent << ")\n";
-        std::cout << "Uang kamu saat ini: M" << payer.getMoney() << "\n";
-        throw InsufficientFundsException(payer.getUsername(), rent, payer.getMoney());
+        throw InsufficientFundsException(
+            payer.getUsername(), rent, payer.getMoney());
     }
 
+    int payerBefore = payer.getMoney();
+    int ownerBefore = owner->getMoney();
     payer.deductMoney(rent);
     owner->addMoney(rent);
 
     std::string detail;
     if (prop.getType() == PropertyType::STREET) {
-        StreetProperty* sp = static_cast<StreetProperty*>(&prop);
+        auto* sp = static_cast<const StreetProperty*>(&prop);
         int lvl = sp->getBuildingCount();
-        if (lvl == 0) detail = "tanah kosong";
-        else if (lvl == 5) detail = "hotel";
-        else detail = std::to_string(lvl) + " rumah";
-        if (prop.getFestivalMultiplier() > 1)
-            detail += ", festival aktif x"
-                   + std::to_string(prop.getFestivalMultiplier());
+        if (lvl == 0) {
+            detail = "tanah kosong";
+        } else if (sp->getBuildingLevel() == BuildingLevel::HOTEL) {
+            detail = "hotel";
+        } else {
+            detail = std::to_string(lvl) + " rumah";
+        }
+
+        if (prop.getFestivalMultiplier() > 1) {
+            detail += ", festival x" +
+                      std::to_string(prop.getFestivalMultiplier());
+        }
     } else if (prop.getType() == PropertyType::RAILROAD) {
         detail = "railroad";
     } else {
         detail = "utility";
     }
 
-    logger.logRent(payer.getUsername(), owner->getUsername(),
-                   rent, prop.getCode(), detail);
+    std::ostringstream msg;
+    msg << "Kamu mendarat di " << prop.getName() << " (" << prop.getCode() << "), milik " << owner->getUsername() << "!\n";
+    if (prop.getType() == PropertyType::STREET) {
+        msg << "Kondisi: " << detail << "\n";
+    }
+    msg << "Sewa: M" << rent << "\n"
+        << "Uang " << payer.getUsername() << " saat ini: M" << payerBefore << " -> M" << payer.getMoney() << "\n"
+        << "Uang " << owner->getUsername() << " saat ini: M" << ownerBefore << " -> M" << owner->getMoney();
+    engine.pushEvent(GameEventType::MONEY, UiTone::WARNING, "Bayar Sewa", msg.str());
+    logger.logRent(payer.getUsername(), owner->getUsername(), rent, prop.getCode(), detail);
 }
 
-// Mortage Property
 bool PropertyManager::mortgageProperty(Player& player, Property& prop) {
-    if (!canMortgage(player, prop)) {
-        if (prop.getType() == PropertyType::STREET) {
-            StreetProperty* sp = static_cast<StreetProperty*>(&prop);
-            if (hasBuildingsInColorGroup(player, sp->getColorGroup())) {
-                std::cout << prop.getName()
-                          << " tidak dapat digadaikan!\n";
-                std::cout << "Masih terdapat bangunan di color group ["
-                          << sp->getColorGroup() << "].\n";
-                std::cout << "Jual semua bangunan color group ["
-                          << sp->getColorGroup() << "]? (y/n): ";
-                char choice;
-                std::cin >> choice;
-                if (choice != 'y' && choice != 'Y') return false;
-                sellAllBuildingsInColorGroup(player, sp->getColorGroup());
-                std::cout << "Lanjut menggadaikan " << prop.getName()
-                          << "? (y/n): ";
-                std::cin >> choice;
-                if (choice != 'y' && choice != 'Y') return false;
-            } else {
+    if (prop.getOwner() != &player) {
+        throw NotOwnerException(player.getUsername(), prop.getCode());
+    }
+    if (prop.isMortgaged()) {
+        throw AlreadyMortgagedException(prop.getCode());
+    }
+
+    if (prop.getType() == PropertyType::STREET) {
+        auto* sp = static_cast<StreetProperty*>(&prop);
+        if (hasBuildingsInColorGroup(player, sp->getColorGroup())) {
+            const std::string sellPromptKey = "jual_bangunan_" + prop.getCode();
+
+            engine.pushEvent(GameEventType::PROPERTY, UiTone::WARNING,
+                "Ada Bangunan",
+                "Properti ini masih memiliki bangunan di atasnya!\n"
+                "Kamu harus menjual seluruh bangunan dengan Color Group yang sama sebelum menggadaikan.");
+
+            if (!engine.hasPromptAnswer(sellPromptKey)) {
+                engine.pushPrompt(
+                    sellPromptKey,
+                    "Jual seluruh bangunan dengan Color Group " + sp->getColorGroup() + "? (y/n):",
+                    {"y", "n"});
+                engine.setPendingContinuation([this, &player, &prop]() {
+                    CommandResult resumed;
+                    mortgageProperty(player, prop);
+                    return resumed;
+                });
                 return false;
             }
-        } else {
-            return false;
-        }
-    }
 
-    int mortgageValue = prop.getMortgageValue();
-    prop.setStatus(OwnershipStatus::MORTGAGED);
-    bank.sendMoney(player, mortgageValue);
-
-    logger.logMortgage(player.getUsername(), prop.getCode(), mortgageValue);
-
-    std::cout << prop.getName() << " berhasil digadaikan.\n";
-    std::cout << "Kamu menerima M" << mortgageValue << " dari Bank.\n";
-    std::cout << "Uang kamu sekarang: M" << player.getMoney() << "\n";
-    std::cout << "Catatan: Sewa tidak dapat dipungut dari properti "
-                 "yang digadaikan.\n";
-    return true;
-}
-
-// Redeem Property
-bool PropertyManager::redeemProperty(Player& player, Property& prop) {
-    if (!canRedeem(player, prop)) return false;
-
-    int redeemCost = prop.getPurchasePrice();
-
-    if (!player.canAfford(redeemCost)) {
-        std::cout << "Uang kamu tidak cukup untuk menebus "
-                  << prop.getName() << ".\n";
-        std::cout << "Harga tebus: M" << redeemCost
-                  << " | Uang kamu: M" << player.getMoney() << "\n";
-        return false;
-    }
-
-    bank.receivePayment(player, redeemCost);
-    prop.setStatus(OwnershipStatus::OWNED);
-
-    logger.logRedeem(player.getUsername(), prop.getCode(), redeemCost);
-
-    std::cout << prop.getName() << " berhasil ditebus!\n";
-    std::cout << "Kamu membayar M" << redeemCost << " ke Bank.\n";
-    std::cout << "Uang kamu sekarang: M" << player.getMoney() << "\n";
-    return true;
-}
-
-// Build Property 
-bool PropertyManager::buildOnProperty(Player& player, StreetProperty& prop) {
-    const std::string& colorGroup = prop.getColorGroup();
-
-    if (!hasMonopoly(player, colorGroup)) {
-        std::cout << "Kamu harus memiliki seluruh petak dalam color group ["
-                  << colorGroup << "] untuk membangun.\n";
-        return false;
-    }
-
-    if (prop.getBuildingLevel() == BuildingLevel::HOTEL) {
-        std::cout << prop.getName()
-                  << " sudah berstatus hotel (maksimal).\n";
-        return false;
-    }
-
-    bool upgradeToHotel = false;
-    int  cost           = 0;
-
-    // Prerequisite to own a house
-    if (prop.getBuildingLevel() == BuildingLevel::HOUSE_4) {
-        auto group = getColorGroup(colorGroup);
-        bool allHave4 = true;
-        for (auto* sp : group) {
-            if (sp->getBuildingLevel() != BuildingLevel::HOUSE_4) {
-                allHave4 = false;
-                break;
+            const std::string sellAnswer = engine.consumePromptAnswer(sellPromptKey);
+            if (sellAnswer != "y" && sellAnswer != "Y") {
+                engine.pushEvent(GameEventType::PROPERTY, UiTone::INFO,
+                    "Gadai Dibatalkan",
+                    "Aksi gadai dibatalkan!");
+                return false;
             }
+
+            sellAllBuildingsInColorGroup(player, sp->getColorGroup());
         }
-        if (!allHave4) {
-            std::cout << "Semua petak di color group [" << colorGroup
-                      << "] harus memiliki 4 rumah sebelum upgrade ke hotel.\n";
-            return false;
-        }
-        upgradeToHotel = true;
-        cost = prop.getHotelCost();
-        std::cout << "Upgrade ke hotel? Biaya: M" << cost << " (y/n): ";
-    } else {
-        cost = prop.getHouseCost();
-        std::cout << "Kamu membangun 1 rumah di " << prop.getName()
-                  << ". Biaya: M" << cost << " (y/n): ";
     }
 
-    char choice;
-    std::cin >> choice;
-    if (choice != 'y' && choice != 'Y') return false;
+    int mv = prop.getMortgageValue();
+    const std::string gadaiPromptKey = "gadai_confirm_" + prop.getCode();
+    if (!engine.hasPromptAnswer(gadaiPromptKey)) {
+        engine.pushPrompt(
+            gadaiPromptKey,
+            "Apakah kamu yakin ingin menggadaikan properti " + prop.getName() + " untuk mendapatkan uang tunai sebesar M" + std::to_string(mv) + "? (y/n):",
+            {"y", "n"});
+        engine.setPendingContinuation([this, &player, &prop]() {
+            CommandResult resumed;
+            mortgageProperty(player, prop);
+            return resumed;
+        });
+        return false;
+    }
+
+    const std::string gadaiAnswer = engine.consumePromptAnswer(gadaiPromptKey);
+    if (gadaiAnswer != "y" && gadaiAnswer != "Y") {
+        engine.pushEvent(GameEventType::PROPERTY, UiTone::INFO,
+            "Gadai Dibatalkan",
+            "Aksi gadai dibatalkan!");
+        return false;
+    }
+
+    prop.setStatus(OwnershipStatus::MORTGAGED);
+    bank.sendMoney(player, mv);
+    logger.logMortgage(player.getUsername(), prop.getCode(), mv);
+    engine.pushEvent(GameEventType::PROPERTY, UiTone::SUCCESS,
+        "Gadai Berhasil",
+        prop.getName() + " berhasil digadaikan!\n"
+        "Uang kamu saat ini: M" + std::to_string(player.getMoney()));
+    return true;
+}
+
+bool PropertyManager::redeemProperty(Player& player, Property& prop) {
+    if (prop.getOwner() != &player) {
+        throw NotOwnerException(player.getUsername(), prop.getCode());
+    }
+    if (!prop.isMortgaged()) {
+        throw NotMortgagedException(prop.getCode());
+    }
+
+    int cost = prop.getPurchasePrice();
+    if (prop.getType() == PropertyType::RAILROAD ||
+        prop.getType() == PropertyType::UTILITY) {
+        cost = prop.getMortgageValue() * 2;
+    }
 
     if (!player.canAfford(cost)) {
-        std::cout << "Uang kamu tidak cukup untuk membangun!\n";
+        engine.pushEvent(GameEventType::PROPERTY, UiTone::WARNING,
+            "Uang Tidak Cukup",
+            "Tebus: M" + std::to_string(cost) +
+                " | Uang kamu: M" + std::to_string(player.getMoney()));
         return false;
     }
 
     bank.receivePayment(player, cost);
-
-    if (upgradeToHotel) {
-        prop.buildHotel();
-        logger.logBuild(player.getUsername(), prop.getCode(), "hotel", cost);
-        std::cout << prop.getName() << " di-upgrade ke Hotel!\n";
-    } else {
-        prop.buildHouse();
-        logger.logBuild(player.getUsername(), prop.getCode(), "rumah", cost);
-        std::cout << "Kamu membangun 1 rumah di " << prop.getName()
-                  << ". Biaya: M" << cost << "\n";
-    }
-
-    std::cout << "Uang tersisa: M" << player.getMoney() << "\n";
+    prop.setStatus(OwnershipStatus::OWNED);
+    logger.logRedeem(player.getUsername(), prop.getCode(), cost);
+    engine.pushEvent(GameEventType::PROPERTY, UiTone::SUCCESS,
+        "Tebus Berhasil",
+        "Kamu berhasil menebus properti " + prop.getName() + " seharga M" + std::to_string(cost) + "!\n"
+        "Uang kamu saat ini: M" + std::to_string(player.getMoney()));
     return true;
 }
 
-// Sell Property to Bank
+bool PropertyManager::buildOnProperty(Player& player, StreetProperty& prop) {
+    const std::string& cg = prop.getColorGroup();
+    if (!hasMonopoly(player, cg)) {
+        throw GameException("Harus memonopoli [" + cg + "] untuk membangun.");
+    }
+    if (prop.getBuildingLevel() == BuildingLevel::HOTEL) {
+        throw MaxBuildingLevelException(prop.getCode());
+    }
+
+    bool upgradeToHotel = (prop.getBuildingLevel() == BuildingLevel::HOUSE_4);
+    if (upgradeToHotel) {
+        for (auto* sp : getColorGroup(cg)) {
+            if (sp->getBuildingLevel() != BuildingLevel::HOUSE_4) {
+                throw GameException(
+                    "Semua petak [" + cg + "] harus 4 rumah dulu.");
+            }
+        }
+    }
+
+    int cost = upgradeToHotel ? prop.getHotelCost() : prop.getHouseCost();
+    const std::string promptKey = "bangun_" + prop.getCode();
+    if (!engine.hasPromptAnswer(promptKey)) {
+        std::string label = upgradeToHotel ? "hotel" : "rumah";
+        engine.pushPrompt(
+            promptKey,
+            "Apakah kamu ingin membangun " + label + " di " + prop.getName() + " dengan biaya M" + std::to_string(cost) + "? (y/n):",
+            {"y", "n"});
+        engine.setPendingContinuation([this, &player, &prop]() {
+            CommandResult resumed;
+            buildOnProperty(player, prop);
+            return resumed;
+        });
+        return false;
+    }
+
+    const std::string answer = engine.consumePromptAnswer(promptKey);
+    if (answer != "y" && answer != "Y") {
+        engine.pushEvent(GameEventType::PROPERTY, UiTone::INFO,
+            "Bangun Dibatalkan",
+            "Proses pembangunan dibatalkan!");
+        return false;
+    }
+
+    if (!player.canAfford(cost)) {
+        engine.pushEvent(GameEventType::PROPERTY, UiTone::WARNING,
+            "Uang Tidak Cukup",
+            "Butuh M" + std::to_string(cost) +
+                " | Punya M" + std::to_string(player.getMoney()));
+        return false;
+    }
+
+    bank.receivePayment(player, cost);
+    if (upgradeToHotel) {
+        prop.buildHotel();
+        logger.logBuild(player.getUsername(), prop.getCode(), "hotel", cost);
+        engine.pushEvent(GameEventType::PROPERTY, UiTone::SUCCESS,
+            "Upgrade Hotel",
+            "Satu hotel telah dibangun di " + prop.getName() + ".\n"
+            "Uang kamu saat ini: M" + std::to_string(player.getMoney()));
+    } else {
+        prop.buildHouse();
+        logger.logBuild(player.getUsername(), prop.getCode(), "rumah", cost);
+        engine.pushEvent(GameEventType::PROPERTY, UiTone::SUCCESS,
+            "Bangun Rumah",
+            "Satu rumah telah dibangun di " + prop.getName() + ".\n"
+            "Uang kamu saat ini: M" + std::to_string(player.getMoney()));
+    }
+    return true;
+}
+
 void PropertyManager::sellPropertyToBank(Player& player, Property& prop) {
     int sellValue = prop.getSellValue();
     if (prop.getType() == PropertyType::STREET) {
-        StreetProperty* sp = static_cast<StreetProperty*>(&prop);
+        auto* sp = static_cast<StreetProperty*>(&prop);
         if (sp->getBuildingLevel() != BuildingLevel::NONE) {
             sp->demolishBuildings();
         }
     }
-
     bank.sendMoney(player, sellValue);
     bank.reclaim(&prop);
-
     logger.log(player.getUsername(), "JUAL_PROPERTI",
-               "Jual " + prop.getCode() + " ke Bank seharga M"
-               + std::to_string(sellValue));
+               "Jual " + prop.getCode() + " seharga M" +
+                   std::to_string(sellValue));
 }
 
-
 std::vector<Property*> PropertyManager::getMortgageableProperties(
-    const Player& player) const
-{
+    const Player& player) const {
     std::vector<Property*> result;
     for (Property* prop : player.getOwnedProperties()) {
-        if (canMortgage(player, *prop)) result.push_back(prop);
+        if (canMortgage(player, *prop)) {
+            result.push_back(prop);
+        }
     }
     return result;
 }
 
 std::vector<Property*> PropertyManager::getMortgagedProperties(
-    const Player& player) const
-{
+    const Player& player) const {
     std::vector<Property*> result;
     for (Property* prop : player.getOwnedProperties()) {
-        if (prop->isMortgaged()) result.push_back(prop);
+        if (prop->isMortgaged()) {
+            result.push_back(prop);
+        }
     }
     return result;
 }
 
 std::map<std::string, std::vector<StreetProperty*>>
-PropertyManager::getBuildableColorGroups(const Player& player) const
-{
+PropertyManager::getBuildableColorGroups(const Player& player) const {
     std::map<std::string, std::vector<StreetProperty*>> result;
     for (Property* prop : player.getOwnedProperties()) {
-        if (prop->getType() != PropertyType::STREET) continue;
-        StreetProperty* sp = static_cast<StreetProperty*>(prop);
-        const std::string& cg = sp->getColorGroup();
-        if (!hasMonopoly(player, cg)) continue;
+        if (prop->getType() != PropertyType::STREET) {
+            continue;
+        }
+
+        auto* sp = static_cast<StreetProperty*>(prop);
+        if (!hasMonopoly(player, sp->getColorGroup())) {
+            continue;
+        }
         if (sp->getBuildingLevel() != BuildingLevel::HOTEL) {
-            result[cg].push_back(sp);
+            result[sp->getColorGroup()].push_back(sp);
         }
     }
     return result;
 }
 
 std::vector<StreetProperty*> PropertyManager::getBuildableTilesInGroup(
-    const Player& player, const std::string& colorGroup) const
-{
+    const Player& player, const std::string& colorGroup) const {
     auto group = getColorGroup(colorGroup);
-    std::vector<StreetProperty*> result;
-
-    int minLevel = 5; 
+    int minLevel = 5;
     for (auto* sp : group) {
         if (sp->getOwner() == &player) {
-            int lvl = sp->getBuildingCount();
-            minLevel = std::min(minLevel, lvl);
+            minLevel = std::min(minLevel, sp->getBuildingCount());
         }
     }
 
+    std::vector<StreetProperty*> result;
     for (auto* sp : group) {
-        if (sp->getOwner() != &player) continue;
-        if (sp->getBuildingLevel() == BuildingLevel::HOTEL) continue;
+        if (sp->getOwner() != &player) {
+            continue;
+        }
+        if (sp->getBuildingLevel() == BuildingLevel::HOTEL) {
+            continue;
+        }
         if (sp->getBuildingCount() == minLevel) {
             result.push_back(sp);
         }
@@ -428,34 +476,37 @@ std::vector<StreetProperty*> PropertyManager::getBuildableTilesInGroup(
 }
 
 bool PropertyManager::canMortgage(const Player& player,
-                                   const Property& prop) const
-{
-    if (prop.getOwner() != &player) return false;
-    if (prop.isMortgaged()) return false;
+                                  const Property& prop) const {
+    if (prop.getOwner() != &player || prop.isMortgaged()) {
+        return false;
+    }
+
     if (prop.getType() == PropertyType::STREET) {
-        const StreetProperty* sp =
-            static_cast<const StreetProperty*>(&prop);
-        if (hasBuildingsInColorGroup(player, sp->getColorGroup()))
+        const auto* sp = static_cast<const StreetProperty*>(&prop);
+        if (hasBuildingsInColorGroup(player, sp->getColorGroup())) {
             return false;
+        }
     }
     return true;
 }
 
 bool PropertyManager::canRedeem(const Player& player,
-                                 const Property& prop) const
-{
-    if (prop.getOwner() != &player) return false;
-    if (!prop.isMortgaged()) return false;
-    return true;
+                                const Property& prop) const {
+    return prop.getOwner() == &player && prop.isMortgaged();
 }
 
 int PropertyManager::estimateLiquidationValue(const Player& player) const {
     int total = 0;
     for (Property* prop : player.getOwnedProperties()) {
-        if (prop->isMortgaged()) {
+        if (!prop || prop->isMortgaged()) {
             continue;
         }
-        total += prop->getSellValue();
+
+        int bestValue = prop->getSellValue();
+        if (canMortgage(player, *prop)) {
+            bestValue = std::max(bestValue, prop->getMortgageValue());
+        }
+        total += bestValue;
     }
     return total;
 }

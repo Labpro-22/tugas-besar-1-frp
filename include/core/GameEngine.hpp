@@ -1,7 +1,9 @@
 #pragma once
+#include <functional>
 #include <string>
 #include <vector>
 #include <memory>
+#include <unordered_map>
 #include "../../include/models/Dice.hpp"
 #include "../../include/core/TurnManager.hpp"
 #include "../../include/core/Command.hpp"
@@ -27,6 +29,10 @@ class GameEngine{
         Board* board;
         vector<Player*> players;
         bool gameOver;
+        bool gameStarted;
+        bool turnActionTaken;
+        bool diceRolledThisTurn;
+        bool extraRollAllowedThisTurn;
         int maxTurn;
         int initialBalance;
         int goSalary;
@@ -42,18 +48,24 @@ class GameEngine{
         EffectManager* effectManager;
         TransactionLogger* logger;
 
+        // ── Event buffer ───────────────────────────────────────────────────
+        // Tile, Manager, dan kode lain di Core/Model layer TIDAK boleh
+        // cout/cin langsung. Mereka push event/prompt ke buffer ini,
+        // lalu engine flush ke CommandResult saat processCommand selesai.
+        vector<GameEvent>              pendingEvents_;
+        vector<PromptRequest>          pendingPrompts_;
+
         void initBoard();
         void handleJailTurn(Player& p);
         void awardPassGoSalary(Player& p);
         vector<bool> buildBankruptFlags() const;
+        void resetTurnActionFlags();
     
     public:
         GameEngine();
         ~GameEngine();
-        //Tujuannya agar tidak bisa di copy
         GameEngine(const GameEngine&) = delete;
         GameEngine& operator=(const GameEngine&) = delete;
-
 
         void setBank(Bank* b);
         void setAuctionManager(AuctionManager* am);
@@ -62,6 +74,26 @@ class GameEngine{
         void setCardManager(CardManager* cm);
         void setEffectManager(EffectManager* em);
         void setTransactionLogger(TransactionLogger* tl);
+
+        // ── Event buffer API (dipakai oleh Tile & Manager) ────────────────
+        void pushEvent(GameEventType type, UiTone tone,
+                       const std::string& title, const std::string& msg);
+        void pushPrompt(const std::string& key, const std::string& msg,
+                        const std::vector<std::string>& options = {},
+                        bool required = true);
+        // Flush semua pending event/prompt ke result, lalu bersihkan buffer
+        void flushEvents(CommandResult& result);
+        void setPendingContinuation(const std::function<CommandResult()>& continuation);
+        void chainPendingContinuation(const std::function<CommandResult()>& continuation);
+        bool hasPendingContinuation() const;
+        CommandResult resumePendingAction();
+        void clearPendingContinuation();
+        // Ambil jawaban prompt dari UI (diisi oleh GameUI sebelum melanjutkan)
+        void setPromptAnswer(const std::string& key, const std::string& answer);
+        std::string getPromptAnswer(const std::string& key) const;
+        std::string consumePromptAnswer(const std::string& key);
+        bool hasPromptAnswer(const std::string& key) const;
+        void clearPromptAnswers();
 
         //Siklus permainan
         CommandResult startNewGame(int nPlayers, vector<string> names);
@@ -80,7 +112,6 @@ class GameEngine{
         vector<Player*> getActivePlayers() const;
         const vector<Player*>& getPlayers() const;
     
-        // Getter untuk Manager lain yang perlu mengakses engine
         Board& getBoard();
         Dice& getDice();
         TurnManager& getTurnManager();
@@ -98,8 +129,11 @@ class GameEngine{
         int getJailFine() const;
         int getCurrentTurn() const;
 
-        // Snapshot boundary for save/load.
         GameSnapshot createSnapshot() const;
         void applySnapshot(const GameSnapshot& snapshot);
 
+private:
+    // prompt answer store: key → answer string
+    std::unordered_map<std::string, std::string> promptAnswers_;
+    std::function<CommandResult()> pendingContinuation_;
 };

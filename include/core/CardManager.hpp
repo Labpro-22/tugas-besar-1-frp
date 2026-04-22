@@ -25,9 +25,10 @@ private:
     bool initialized;
 
     void randomizeSkillCardOnDraw(const std::shared_ptr<SkillCard>& card);
-    std::shared_ptr<SkillCard> createSkillCardByType(const std::string& typeName) const;
 
 public:
+    std::shared_ptr<SkillCard> createSkillCardByType(const std::string& typeName) const;
+
     CardManager();
 
     void initializeDecks();
@@ -35,7 +36,7 @@ public:
     void drawChanceCard(Player& player, GameEngine& game);
     void drawCommunityCard(Player& player, GameEngine& game);
 
-    void drawSkillCard(Player& player);
+    std::shared_ptr<SkillCard> drawSkillCard(Player& player);
 
     bool hasPendingSkillDrop(const Player& player) const;
     std::vector<std::string> getPendingSkillDropOptions(const Player& player) const;

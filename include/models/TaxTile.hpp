@@ -21,7 +21,8 @@ private:
     int calculateWealth(const Player& player) const;
 
 public:
-    TaxTile(int index, TaxType taxType, int flatAmount, int percentage = 0);
+    TaxTile(int index, TaxType taxType, int flatAmount, int percentage = 0,
+            const string& code = "", const string& name = "");
     
     TaxType getTaxType() const;
     int getFlatAmount() const;

@@ -19,7 +19,14 @@ CommandType CommandParser::resolveType(const std::string& token) const {
     if (token == "LEMPAR_DADU") return CommandType::ROLL_DICE;
     if (token == "ATUR_DADU") return CommandType::SET_DICE;
     if (token == "CETAK_PAPAN") return CommandType::PRINT_BOARD;
+    if (token == "CETAK_AKTA") return CommandType::PRINT_DEED;
+    if (token == "CETAK_PROPERTI") return CommandType::PRINT_PROPERTIES;
     if (token == "CETAK_LOG") return CommandType::PRINT_LOG;
+    if (token == "GADAI") return CommandType::MORTGAGE;
+    if (token == "TEBUS") return CommandType::REDEEM;
+    if (token == "BANGUN") return CommandType::BUILD;
+    if (token == "BAYAR_DENDA" || token == "PAY_JAIL_FINE") return CommandType::PAY_JAIL_FINE;
+    if (token == "GUNAKAN_KEMAMPUAN" || token == "GUNAKAN_KARTU" || token == "KARTU") return CommandType::USE_SKILL;
     if (token == "SIMPAN") return CommandType::SAVE;
     if (token == "MUAT") return CommandType::LOAD;
     if (token == "AKHIRI_GILIRAN" || token == "END_TURN") return CommandType::END_TURN;

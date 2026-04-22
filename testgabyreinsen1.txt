@@ -1,0 +1,78 @@
+6 15
+2
+gaby 120 BKS ACTIVE
+3
+MoveCard 4
+ShieldCard
+LassoCard
+reinsen 130 DEN ACTIVE
+3
+DiscountCard 5
+DemolitionCard
+MoveCard 9
+gaby reinsen
+gaby
+28
+GRT street BANK BANK 1 0 0
+TSK street BANK BANK 1 0 0
+GBR railroad BANK BANK 1 0 0
+BGR street gaby OWNED 1 0 0
+DPK street gaby OWNED 1 0 0
+BKS street gaby OWNED 1 0 0
+MGL street reinsen OWNED 1 0 0
+PLN utility BANK BANK 1 0 0
+SOL street BANK BANK 1 0 0
+YOG street BANK BANK 1 0 0
+STB railroad BANK BANK 1 0 0
+MAL street BANK BANK 1 0 0
+SMG street BANK BANK 1 0 0
+SBY street BANK BANK 1 0 0
+MKS street reinsen OWNED 1 0 0
+BLP street reinsen OWNED 1 0 0
+MND street BANK BANK 1 0 0
+TUG railroad reinsen OWNED 1 0 0
+PLB street BANK BANK 1 0 0
+PKB street gaby OWNED 1 0 0
+PAM utility BANK BANK 1 0 0
+MED street reinsen OWNED 1 0 0
+BDG street BANK BANK 1 0 0
+DEN street reinsen OWNED 1 0 0
+MTR street BANK BANK 1 0 0
+GUB railroad BANK BANK 1 0 0
+JKT street gaby OWNED 1 0 0
+IKN street BANK BANK 1 0 0
+4
+DiscountCard
+ShieldCard
+MoveCard
+TeleportCard
+29
+1 gaby DADU Lempar: 6+2=8 -> mendarat di DPK
+1 gaby BELI Beli DEPOK (DPK) seharga M100
+1 reinsen DADU Lempar: 6+1=7 -> mendarat di FES
+2 gaby DADU Lempar: 6+6=12 -> mendarat di BBP
+2 gaby DADU Lempar: 2+5=7 -> mendarat di PKB
+2 gaby BELI Beli PEKANBARU (PKB) seharga M260
+2 reinsen DADU Lempar: 3+1=4 -> mendarat di MGL
+2 reinsen BELI Beli MAGELANG (MGL) seharga M140
+3 gaby DADU Lempar: 1+5=6 -> mendarat di FES
+3 gaby FESTIVAL PKB: sewa M44 -> M88, durasi 3 giliran
+3 reinsen DADU Lempar: 4+6=10 -> mendarat di MKS
+3 reinsen BELI Beli MAKASSAR (MKS) seharga M220
+4 gaby DADU Lempar: 2+2=4 -> mendarat di JKT
+4 gaby BELI Beli JAKARTA (JKT) seharga M350
+4 gaby DADU Lempar: 1+6=7 -> mendarat di PPH
+4 gaby PAJAK Bayar PPH flat M150
+4 reinsen DADU Lempar: 1+1=2 -> mendarat di BLP
+4 reinsen BELI Beli BALIKPAPAN (BLP) seharga M220
+4 reinsen DADU Lempar: 1+1=2 -> mendarat di TUG
+4 reinsen RAILROAD STASIUN_TUGU (TUG) kini milik reinsen (otomatis - RAILROAD)
+4 reinsen DADU Lempar: 1+3=4 -> mendarat di MED
+4 reinsen BELI Beli MEDAN (MED) seharga M280
+5 gaby DADU Lempar: 1+1=2 -> mendarat di BGR
+5 gaby BELI Beli BOGOR (BGR) seharga M100
+5 gaby DADU Lempar: 1+2=3 -> mendarat di BKS
+5 gaby BELI Beli BEKASI (BKS) seharga M120
+5 reinsen DADU Lempar: 2+1=3 -> mendarat di DEN
+5 reinsen LELANG_BID Bid M10 untuk DEN
+5 reinsen LELANG_HASIL reinsen memenangkan lelang DEN seharga M10

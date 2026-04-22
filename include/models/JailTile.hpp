@@ -5,7 +5,9 @@
 
 class JailTile : public Tile{
 public:
-    explicit JailTile(int index);
+    explicit JailTile(int index,
+                      const string& code = "PEN",
+                      const string& name = "Penjara");
 
     int countInmates(const vector<Player*>& players) const;
     int countVisitors(const vector<Player*>& players) const;

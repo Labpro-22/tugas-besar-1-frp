@@ -106,3 +106,7 @@ int           StreetProperty::getHotelCost()     const { return hotelCost;    }
 int StreetProperty::getBuildingCount() const {
     return static_cast<int>(buildingLevel);
 }
+
+const std::vector<int>& StreetProperty::getRentLevels() const {
+    return rentLevels;
+}

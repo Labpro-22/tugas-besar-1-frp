@@ -2,7 +2,13 @@
 #include "../../include/core/CardManager.hpp"
 #include "../../include/core/GameEngine.hpp"
 
-CardTile::CardTile(int index, const string& code, CardDrawType drawType) : Tile(index, code, drawType == CardDrawType::CHANCE ? "Kesempatan" : "Dana Umum"), drawType(drawType) {}
+CardTile::CardTile(int index, const string& code, CardDrawType drawType,
+                   const string& name)
+    : Tile(index, code,
+           name.empty()
+               ? (drawType == CardDrawType::CHANCE ? "Kesempatan" : "Dana Umum")
+               : name),
+      drawType(drawType) {}
 
 CardDrawType CardTile::getDrawType() const{
     return drawType;

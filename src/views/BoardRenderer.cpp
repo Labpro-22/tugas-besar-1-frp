@@ -138,7 +138,7 @@ std::string BoardRenderer::buildCellStatus(const Board& board, const std::vector
     }
 
     // Penanganan khusus penjara
-    if (boardIndex == 10) {
+    if (tile.getCode() == "PEN") {
         std::vector<std::string> inmates;
         std::vector<std::string> visitors;
 

@@ -7,7 +7,9 @@ private:
     int salary;
 
 public:
-    GoTile(int index, int salary);
+    GoTile(int index, int salary,
+           const string& code = "GO",
+           const string& name = "Petak Mulai");
 
     int getSalary() const;
 

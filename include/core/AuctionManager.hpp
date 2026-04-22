@@ -1,7 +1,7 @@
 #pragma once
 
-#include <vector>
 #include <string>
+#include <vector>
 
 class Player;
 class Property;
@@ -15,23 +15,24 @@ private:
     Bank& bank;
     TransactionLogger& logger;
 
-    Property* auctionedProp;  
-    Player* highestBidder;   
-    int highestBid;     
-    int consecutivePasses; 
-    bool atLeastOneBid;   
+    Property* auctionedProp;
+    Player* highestBidder;
+    int highestBid;
+    int consecutivePasses;
+    bool atLeastOneBid;
+    bool auctionActive;
+    int currentAuctionIndex;
+    std::vector<Player*> auctionOrder;
 
     std::vector<Player*> buildAuctionOrder(Player* triggerPlayer,
                                            bool excludeBankrupt) const;
-
-
     void resetState();
-    bool processTurn(Player& current, int totalActivePlayers);
+    void continueAuction();
     void finalizeAuction();
 
 public:
     AuctionManager(GameEngine& engine, Bank& bank, TransactionLogger& logger);
     void startAuction(Property& prop,
-                      Player*   triggerPlayer,
-                      bool      excludeBankrupt = false);
+                      Player* triggerPlayer,
+                      bool excludeBankrupt = false);
 };

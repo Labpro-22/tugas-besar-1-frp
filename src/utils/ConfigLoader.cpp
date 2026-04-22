@@ -57,6 +57,20 @@ void MiscConfig::setInitialBalance(int v) { initialBalance = v; }
 int  MiscConfig::getMaxTurn() const { return maxTurn; }
 int  MiscConfig::getInitialBalance() const { return initialBalance; }
 
+ActionTileDef::ActionTileDef() : id(0) {}
+
+void ActionTileDef::setId(int value) { id = value; }
+void ActionTileDef::setCode(const string& value) { code = value; }
+void ActionTileDef::setName(const string& value) { name = value; }
+void ActionTileDef::setTileKind(const string& value) { tileKind = value; }
+void ActionTileDef::setColorGroup(const string& value) { colorGroup = value; }
+
+int ActionTileDef::getId() const { return id; }
+string ActionTileDef::getCode() const { return code; }
+string ActionTileDef::getName() const { return name; }
+string ActionTileDef::getTileKind() const { return tileKind; }
+string ActionTileDef::getColorGroup() const { return colorGroup; }
+
 string ConfigLoader::trim(const string& s) const {
     size_t start = s.find_first_not_of(" \t\r\n");
     if (start == string::npos) return "";
@@ -87,6 +101,32 @@ void ConfigLoader::validateProperties(const vector<PropertyDef>& defs) const {
         if (def.getPurchasePrice() < 0) {
             throw ConfigParseException("Property '" + def.getCode() +
                 "' has negative purchasePrice");
+        }
+    }
+}
+
+void ConfigLoader::validateActionTiles(const vector<ActionTileDef>& defs) const {
+    std::map<int, std::string> seenIds;
+    for (const ActionTileDef& def : defs) {
+        if (def.getId() <= 0) {
+            throw ConfigParseException("Action tile has invalid id: " +
+                to_string(def.getId()));
+        }
+        if (def.getCode().empty()) {
+            throw ConfigParseException("Action tile with id=" +
+                to_string(def.getId()) + " has empty code");
+        }
+        if (seenIds.find(def.getId()) != seenIds.end()) {
+            throw ConfigParseException("Duplicate action tile id=" +
+                to_string(def.getId()) + " for code '" + def.getCode() + "'");
+        }
+        seenIds[def.getId()] = def.getCode();
+
+        const string kind = def.getTileKind();
+        if (kind != "SPESIAL" && kind != "KARTU" &&
+            kind != "PAJAK" && kind != "FESTIVAL") {
+            throw ConfigParseException("Action tile '" + def.getCode() +
+                "' has unknown JENIS_PETAK '" + kind + "'");
         }
     }
 }
@@ -193,6 +233,68 @@ vector<PropertyDef> ConfigLoader::loadProperties(const string& path) const {
     }
 
     validateProperties(defs);
+    return defs;
+}
+
+vector<ActionTileDef> ConfigLoader::loadActionTiles(const string& path) const {
+    ifstream file(path);
+    if (!file.is_open()) throw ConfigFileNotFoundException(path);
+
+    vector<ActionTileDef> defs;
+    string line;
+    int lineNum = 0;
+
+    while (getline(file, line)) {
+        lineNum++;
+        line = trim(line);
+        if (line.empty() || line[0] == '#') continue;
+
+        vector<string> tokens = splitLine(line);
+        if (tokens.empty()) continue;
+
+        bool firstIsNumber = true;
+        for (char c : tokens[0]) {
+            if (!isdigit(static_cast<unsigned char>(c))) {
+                firstIsNumber = false;
+                break;
+            }
+        }
+        if (!firstIsNumber) continue;
+
+        if (tokens.size() < 5) {
+            throw ConfigParseException(
+                path + " line " + to_string(lineNum) +
+                ": expected 5 tokens, got " + to_string(tokens.size()));
+        }
+
+        ActionTileDef def;
+        try {
+            string code = tokens[1];
+            string kind = tokens[3];
+            std::transform(code.begin(), code.end(), code.begin(),
+                [](unsigned char c) { return static_cast<char>(std::toupper(c)); });
+            std::transform(kind.begin(), kind.end(), kind.begin(),
+                [](unsigned char c) { return static_cast<char>(std::toupper(c)); });
+
+            def.setId(stoi(tokens[0]));
+            def.setCode(code);
+            def.setName(tokens[2]);
+            def.setTileKind(kind);
+            def.setColorGroup(tokens[4]);
+        } catch (const invalid_argument& e) {
+            throw ConfigParseException(
+                path + " line " + to_string(lineNum) +
+                ": invalid number - " + string(e.what()));
+        } catch (const out_of_range& e) {
+            throw ConfigParseException(
+                path + " line " + to_string(lineNum) +
+                ": number out of range - " + string(e.what()));
+        }
+
+        defs.push_back(def);
+    }
+
+    validateActionTiles(defs);
     return defs;
 }
 

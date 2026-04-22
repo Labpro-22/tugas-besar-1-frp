@@ -8,6 +8,9 @@ void Board::validateIndex(int idx) const {
     if (tiles.empty()){
         throw BoardEmptyException();
     }
+    if (idx < 0 || idx >= static_cast<int>(tiles.size())) {
+        throw GameException("Tile index out of range: " + std::to_string(idx));
+    }
 }
 
 void Board::validateCode(const string& code) const {
@@ -45,6 +48,10 @@ Tile& Board::getTileByCode(const string& code) {
 const Tile& Board::getTileByCode(const string& code) const {
     validateCode(code);
     return *tiles[codeToIndex.at(code)];
+}
+
+bool Board::hasTile(const string& code) const {
+    return codeToIndex.find(code) != codeToIndex.end();
 }
 
 int Board::getIndexOf(const string& code) const {

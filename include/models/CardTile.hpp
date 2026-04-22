@@ -13,7 +13,8 @@ private:
     CardDrawType drawType;
 
 public:
-    CardTile(int index, const string& code, CardDrawType drawType);
+    CardTile(int index, const string& code, CardDrawType drawType,
+             const string& name = "");
     
     CardDrawType getDrawType() const;
 

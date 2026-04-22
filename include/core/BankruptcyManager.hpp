@@ -19,11 +19,16 @@ private:
     PropertyManager& propertyManager;
     AuctionManager& auctionManager;
 
+    Player* pendingDebtor;
+    Player* pendingCreditor;
+    int pendingObligation;
+
     int computeMaxLiquidation(const Player& player) const;
     void runLiquidationPanel(Player& player, int obligation);
     void transferAssetsToCreditor(Player& debtor, Player& creditor);
     void returnAssetsToBank(Player& debtor);
     void auctionAllBankProperties(Player& debtor);
+    void clearPendingDebt();
 
 public:
     BankruptcyManager(GameEngine& engine,
