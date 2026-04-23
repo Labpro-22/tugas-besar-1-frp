@@ -126,10 +126,18 @@ void MainUI::syncTabActiveState() {
 
 void MainUI::updateData(const std::vector<Player*>& players,
                         const Player& currentPlayer,
-                        const std::string& systemLog) {
+                        const std::string& systemLog,
+                        int currentTurn,
+                        int maxTurn) {
     m_leaderboardView.updateFromPlayers(players);
     m_assetPanel.updateData(currentPlayer, systemLog);
-    m_turnStatusText.setString(currentPlayer.getUsername() + "'s Turn");
+    std::string turnLabel = std::to_string(currentTurn) + "/";
+    if (maxTurn > 0) {
+        turnLabel += std::to_string(maxTurn);
+    } else {
+        turnLabel += "-";
+    }
+    m_turnStatusText.setString(currentPlayer.getUsername() + "'s turn " + turnLabel);
     const sf::FloatRect bounds = m_turnStatusText.getLocalBounds();
     m_turnStatusText.setOrigin(bounds.left + (bounds.width * 0.5f), bounds.top);
     m_turnStatusText.setPosition(Layout1920::kTurnStatusPos);
@@ -195,6 +203,11 @@ bool MainUI::handleMouseReleased(sf::Vector2f mousePos) {
     }
 
     return consumed;
+}
+
+bool MainUI::isRollDiceButtonHit(sf::Vector2f mousePos) const {
+    return m_rollVisible && m_rollDiceButton.isVisible() && m_rollDiceButton.isEnabled() &&
+           m_rollDiceButton.contains(mousePos);
 }
 
 void MainUI::renderBackground(sf::RenderWindow& window) const {

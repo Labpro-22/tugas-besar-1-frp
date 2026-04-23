@@ -70,7 +70,8 @@ class GameEngine{
 
         // ── Event buffer API (dipakai oleh Tile & Manager) ────────────────
         void pushEvent(GameEventType type, UiTone tone,
-                       const std::string& title, const std::string& msg);
+                       const std::string& title, const std::string& msg,
+                       const std::string& eventPayload = "");
         void pushPrompt(const PromptRequest& prompt);
         void pushPrompt(const std::string& key, const std::string& msg,
                         const std::vector<std::string>& options = {},

@@ -24,7 +24,9 @@ public:
 
     void updateData(const std::vector<Player*>& players,
                     const Player& currentPlayer,
-                    const std::string& systemLog);
+                    const std::string& systemLog,
+                    int currentTurn,
+                    int maxTurn);
 
     void setRollEnabled(bool enabled);
     void setRollVisible(bool visible);
@@ -36,6 +38,7 @@ public:
     bool handleMouseWheel(float delta, sf::Vector2f mousePos);
     bool handleMousePressed(sf::Vector2f mousePos);
     bool handleMouseReleased(sf::Vector2f mousePos);
+    bool isRollDiceButtonHit(sf::Vector2f mousePos) const;
 
     void renderBackground(sf::RenderWindow& window) const;
     void renderOverlay(sf::RenderWindow& window) const;

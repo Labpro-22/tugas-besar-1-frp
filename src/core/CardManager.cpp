@@ -62,11 +62,23 @@ void CardManager::drawChanceCard(Player& player, GameEngine& game) {
     if (!initialized) initializeDecks();
 
     std::shared_ptr<ActionCard> card = chanceDeck.draw();
+    std::string cardCode;
+    if (card && dynamic_cast<const GoToNearestRailroadCard*>(card.get()) != nullptr) {
+        cardCode = "CHANCE_NEAREST_RAILROAD";
+    } else if (card && dynamic_cast<const MoveBackCard*>(card.get()) != nullptr) {
+        cardCode = "CHANCE_MOVE_BACK";
+    } else if (card && dynamic_cast<const GoToJailCard*>(card.get()) != nullptr) {
+        cardCode = "CHANCE_GO_TO_JAIL";
+    } else if (card && dynamic_cast<const GetOutOfJailCard*>(card.get()) != nullptr) {
+        cardCode = "CHANCE_GET_OUT_OF_JAIL";
+    }
+
     game.pushEvent(GameEventType::CARD, UiTone::INFO,
         "Kartu Kesempatan",
         "Kamu mendarat di Kesempatan!\n"
         "Pemain " + player.getUsername() + " mengambil kartu Kesempatan:\n\"" +
-            card->getDescription() + "\"");
+            card->getDescription() + "\"",
+        cardCode);
     game.getLogger().logDrawCard(player.getUsername(), "Kesempatan",
                                  card->getDescription());
     card->apply(player, game);
@@ -77,11 +89,21 @@ void CardManager::drawCommunityCard(Player& player, GameEngine& game) {
     if (!initialized) initializeDecks();
 
     std::shared_ptr<ActionCard> card = communityDeck.draw();
+    std::string cardCode;
+    if (card && dynamic_cast<const BirthdayCard*>(card.get()) != nullptr) {
+        cardCode = "CARD_BIRTHDAY";
+    } else if (card && dynamic_cast<const DoctorFeeCard*>(card.get()) != nullptr) {
+        cardCode = "CARD_DOCTOR";
+    } else if (card && dynamic_cast<const ElectionCard*>(card.get()) != nullptr) {
+        cardCode = "CARD_ELECTION";
+    }
+
     game.pushEvent(GameEventType::CARD, UiTone::INFO,
         "Dana Umum",
         "Kamu mendarat di Dana Umum!\n"
         "Pemain " + player.getUsername() + " mengambil kartu Dana Umum:\n\"" +
-            card->getDescription() + "\"");
+            card->getDescription() + "\"",
+        cardCode);
     game.getLogger().logDrawCard(player.getUsername(), "Dana Umum",
                                  card->getDescription());
     card->apply(player, game);

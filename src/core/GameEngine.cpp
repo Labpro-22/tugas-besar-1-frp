@@ -2199,8 +2199,9 @@ CommandResult GameEngine::handlePendingSkillDropPrompt() {
 // ── Event buffer API ──────────────────────────────────────────────────────────
 
 void GameEngine::pushEvent(GameEventType type, UiTone tone,
-                            const std::string& title, const std::string& msg) {
-    pendingEvents_.push_back(GameEvent{type, tone, title, msg});
+                            const std::string& title, const std::string& msg,
+                            const std::string& eventPayload) {
+    pendingEvents_.push_back(GameEvent{type, tone, title, msg, eventPayload});
 }
 
 void GameEngine::pushPrompt(const PromptRequest& prompt) {

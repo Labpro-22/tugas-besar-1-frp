@@ -328,9 +328,16 @@ sf::FloatRect AssetPanel::getContentRect() const {
                          m_panelSize.y - 112.0f);
 }
 
-float AssetPanel::getCardWidth() const { return 145.0f; }
-float AssetPanel::getCardHeight() const { return 236.0f; }
-float AssetPanel::getCardGapX() const { return 34.0f; }
+float AssetPanel::getCardWidth() const {
+    if (m_mode == Mode::INVENTORY) {
+        const float gapX = getCardGapX();
+        const float contentWidth = getContentRect().width;
+        return std::max(120.0f, (contentWidth - gapX) / 2.0f);
+    }
+    return 145.0f;
+}
+float AssetPanel::getCardHeight() const { return (m_mode == Mode::INVENTORY) ? 216.91f : 236.0f; }
+float AssetPanel::getCardGapX() const { return (m_mode == Mode::INVENTORY) ? 24.0f : 34.0f; }
 float AssetPanel::getCardGapY() const { return 20.0f; }
 
 int AssetPanel::getCurrentItemCount() const {
@@ -349,7 +356,7 @@ float AssetPanel::computeTotalContentHeight() const {
         return 0.0f;
     }
 
-    const int columns = 4;
+    const int columns = (m_mode == Mode::INVENTORY) ? 2 : 4;
     const int rows = (itemCount + columns - 1) / columns;
     return rows * getCardHeight() + (rows - 1) * getCardGapY();
 }
@@ -398,7 +405,7 @@ std::vector<sf::FloatRect> AssetPanel::buildItemBounds() const {
     }
 
     const sf::FloatRect content = getContentRect();
-    const int columns = 4;
+    const int columns = (m_mode == Mode::INVENTORY) ? 2 : 4;
 
     bounds.reserve(static_cast<size_t>(itemCount));
     for (int i = 0; i < itemCount; ++i) {
@@ -752,7 +759,7 @@ void AssetPanel::renderAssetOrInventory(sf::RenderWindow& window) const {
 
         if (m_mode == Mode::INVENTORY && i < m_inventoryItems.size()) {
             const InventoryItem& item = m_inventoryItems[i];
-            const sf::FloatRect previewRect(rect.left + 8.0f, rect.top + 8.0f, rect.width - 16.0f, rect.height - 8.0f);
+            const sf::FloatRect previewRect(rect.left + 8.0f, rect.top + 8.0f, 324.42, 216.91);
 
             const auto itTexture = m_inventoryThumbnailTextures.find(item.thumbnailKey);
             if (itTexture != m_inventoryThumbnailTextures.end() &&

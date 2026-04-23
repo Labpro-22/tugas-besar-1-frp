@@ -16,7 +16,8 @@ enum class PopupMode {
     COMMUNITY,
     TAX,
     SPECIAL,
-    INFO
+    INFO,
+    FULL_IMAGE_DISMISSABLE
 };
 
 struct PopupActionItem {
@@ -102,6 +103,8 @@ private:
     sf::Sprite m_minimizeIconSprite;
     sf::Texture m_showMenuTexture;
     sf::Sprite m_showMenuSprite;
+    sf::Texture m_fullImageTexture;
+    sf::Sprite m_fullImageSprite;
 
     sf::RectangleShape m_propertyRibbon;
     sf::Text m_headerText;
@@ -135,6 +138,7 @@ private:
     void rebuildCardTexts();
     void rebuildActionSprites();
     void updateActionVisuals();
+    void layoutFullImage();
     void invokeAction(const std::string& actionId);
 
     bool loadTextureWithFallback(sf::Texture& texture, const std::vector<std::string>& paths) const;

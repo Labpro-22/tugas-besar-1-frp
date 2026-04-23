@@ -271,6 +271,7 @@ bool DynamicPopupBox::loadAssets(const std::string& uiDir) {
     m_cardTemplateSprite.setTexture(m_cardTemplateTexture);
     m_minimizeIconSprite.setTexture(m_minimizeIconTexture);
     m_showMenuSprite.setTexture(m_showMenuTexture);
+    m_fullImageSprite.setTexture(m_cardTemplateTexture);
 
     layoutExpanded();
     layoutMinimized();
@@ -281,6 +282,36 @@ void DynamicPopupBox::show(const PopupPayload& payload, ActionCallback onAction)
     m_payload = payload;
     m_mode = payload.mode;
     m_onAction = std::move(onAction);
+
+    m_isVisible = true;
+    m_isMinimized = false;
+    m_pressedActionIndex = -1;
+    m_pressedMinimize = false;
+    m_pressedShowMenu = false;
+
+    if (m_mode == PopupMode::FULL_IMAGE_DISMISSABLE) {
+        m_promptWantsBidInput = false;
+        m_promptWantsTextInput = false;
+        m_bidInputValue.clear();
+        m_bidInputText.setString("");
+        m_actionSprites.clear();
+        m_rentTexts.clear();
+
+        const std::string fullImagePath =
+            payload.cardTemplateImagePath.empty() ? payload.popupBaseImagePath : payload.cardTemplateImagePath;
+        sf::Texture custom;
+        if (!fullImagePath.empty() &&
+            loadTextureWithFallback(custom, {fullImagePath, joinPath(m_uiDir, fullImagePath)})) {
+            m_fullImageTexture = std::move(custom);
+        } else {
+            buildSolidTexture(m_fullImageTexture, 900, 640, sf::Color(241, 231, 214));
+            std::cerr << "[WARN] DynamicPopupBox: full-image popup texture tidak ditemukan, gunakan dummy.\n";
+        }
+
+        m_fullImageSprite.setTexture(m_fullImageTexture, true);
+        layoutFullImage();
+        return;
+    }
 
     if (!payload.popupBaseImagePath.empty()) {
         sf::Texture custom;
@@ -329,12 +360,6 @@ void DynamicPopupBox::show(const PopupPayload& payload, ActionCallback onAction)
     m_minimizeIconSprite.setTexture(m_minimizeIconTexture, true);
     m_showMenuSprite.setTexture(m_showMenuTexture, true);
 
-    m_isVisible = true;
-    m_isMinimized = false;
-    m_pressedActionIndex = -1;
-    m_pressedMinimize = false;
-    m_pressedShowMenu = false;
-
     rebuildCardTexts();
     rebuildActionSprites();
     layoutExpanded();
@@ -370,6 +395,7 @@ void DynamicPopupBox::showPrompt(const PromptRequest& prompt, ActionCallback onA
 PopupPayload DynamicPopupBox::buildFromPrompt(const PromptRequest& prompt) {
     PopupPayload payload;
     const bool isFestivalPrompt = startsWith(prompt.id, "festival_");
+    const bool isBankruptcyPrompt = startsWith(prompt.id, "likuidasi_");
     const bool hasBidOption = std::any_of(prompt.options.begin(), prompt.options.end(), [](const PromptOption& option) {
         return equalsIgnoreCase(option.key, "BID_MIN") || startsWith(option.key, "BID ");
     });
@@ -383,7 +409,7 @@ PopupPayload DynamicPopupBox::buildFromPrompt(const PromptRequest& prompt) {
     m_promptWantsBidInput = isAuctionPrompt;
     m_promptWantsTextInput = isSkillTargetPrompt && hasTargetSubmitOption;
 
-    payload.mode = isFestivalPrompt || isAuctionPrompt || isSkillTargetPrompt
+    payload.mode = isFestivalPrompt || isAuctionPrompt || isSkillTargetPrompt || isBankruptcyPrompt
         ? PopupMode::SPECIAL
         : PopupMode::INFO;
     payload.headerTitle = prompt.title.empty() ? "PILIHAN" : prompt.title;
@@ -409,6 +435,11 @@ PopupPayload DynamicPopupBox::buildFromPrompt(const PromptRequest& prompt) {
         m_bidInputHint.setString("Ketik ID/KODE target...");
     }
 
+    if (isBankruptcyPrompt) {
+        payload.headerTitle = "BANGKRUT";
+        payload.cardTitle = "BANGKRUT";
+    }
+
     bool hasCustomBidAction = false;
     bool hasCustomTargetAction = false;
     const int minBidFromId = parseAuctionMinBidFromPromptId(prompt.id);
@@ -417,6 +448,10 @@ PopupPayload DynamicPopupBox::buildFromPrompt(const PromptRequest& prompt) {
         const std::string key = option.key;
         std::string label = option.label.empty() ? key : option.label;
         std::string texturePath = "assets/images/ui/btn_cancel.png";
+
+        if (isBankruptcyPrompt) {
+            std::replace(label.begin(), label.end(), '_', ' ');
+        }
 
         if (isFestivalPrompt) {
             texturePath = "assets/images/ui/btn_beli.png";
@@ -504,6 +539,9 @@ void DynamicPopupBox::minimize() {
     if (!m_isVisible) {
         return;
     }
+    if (m_mode == PopupMode::FULL_IMAGE_DISMISSABLE) {
+        return;
+    }
     m_isMinimized = true;
     m_pressedActionIndex = -1;
     m_pressedMinimize = false;
@@ -532,6 +570,10 @@ void DynamicPopupBox::update(sf::Vector2f mousePos) {
                 m_showMenuSprite.setColor(sf::Color::White);
             }
         }
+        return;
+    }
+
+    if (m_mode == PopupMode::FULL_IMAGE_DISMISSABLE) {
         return;
     }
 
@@ -668,6 +710,10 @@ bool DynamicPopupBox::handleMousePressed(sf::Vector2f mousePos) {
         return false;
     }
 
+    if (m_mode == PopupMode::FULL_IMAGE_DISMISSABLE) {
+        return true;
+    }
+
     if (containsMinimizeIcon(mousePos)) {
         m_pressedMinimize = true;
         m_minimizeIconSprite.setColor(sf::Color(235, 220, 190));
@@ -701,6 +747,10 @@ bool DynamicPopupBox::handleMouseReleased(sf::Vector2f mousePos) {
 
         m_showMenuSprite.setColor(sf::Color::White);
         return false;
+    }
+
+    if (m_mode == PopupMode::FULL_IMAGE_DISMISSABLE) {
+        return true;
     }
 
     if (m_pressedMinimize) {
@@ -750,6 +800,11 @@ void DynamicPopupBox::render(sf::RenderWindow& window) const {
     if (m_isMinimized) {
         window.draw(m_showMenuSprite);
         window.draw(m_showMenuText);
+        return;
+    }
+
+    if (m_mode == PopupMode::FULL_IMAGE_DISMISSABLE) {
+        window.draw(m_fullImageSprite);
         return;
     }
 
@@ -854,15 +909,36 @@ void DynamicPopupBox::layoutExpanded() {
                                      popupPos.y + PopupLayout::kMinimizeIconTop);
 
     const float btnX = popupPos.x + PopupLayout::kButtonsX;
+    const float buttonsAreaTop = cardPos.y;
+    const float buttonsAreaHeight = cardSize.y;
     const float btnWidth = PopupLayout::kButtonWidth;
-    const float btnHeight = PopupLayout::kButtonHeight;
-    const float gapY = PopupLayout::kButtonGapY;
+    float btnHeight = PopupLayout::kButtonHeight;
+    float gapY = PopupLayout::kButtonGapY;
+    const float areaHeight = buttonsAreaHeight;
+    const float actionCount = static_cast<float>(m_actionSprites.size());
+    if (actionCount > 0.0f) {
+        const float defaultBlock = (actionCount * btnHeight) + ((actionCount - 1.0f) * gapY);
+        if (defaultBlock > areaHeight) {
+            const float minGap = 1.0f;
+            const float preferredGap = 6.0f;
+            gapY = std::min(preferredGap, std::max(minGap, areaHeight / (actionCount * 8.0f)));
+            btnHeight = (areaHeight - ((actionCount - 1.0f) * gapY)) / actionCount;
+
+            // If still too small, force exact fit without gap to avoid any overflow.
+            if (btnHeight < 16.0f) {
+                gapY = 0.0f;
+                btnHeight = std::max(8.0f, areaHeight / actionCount);
+            } else if (actionCount > 1.0f) {
+                gapY = std::max(0.0f, (areaHeight - (actionCount * btnHeight)) / (actionCount - 1.0f));
+            }
+        }
+    }
     const float blockHeight = (m_actionSprites.empty())
                                   ? 0.0f
                                   : (static_cast<float>(m_actionSprites.size()) * btnHeight) +
                                         (static_cast<float>(m_actionSprites.size() - 1) * gapY);
-    const float btnStartY = popupPos.y + PopupLayout::kButtonsAreaTop +
-                            std::max(0.0f, (PopupLayout::kButtonsAreaHeight - blockHeight) * 0.5f);
+    const float btnStartY = buttonsAreaTop +
+                            std::max(0.0f, (areaHeight - blockHeight) * 0.5f);
 
     for (size_t i = 0; i < m_actionSprites.size(); ++i) {
         SpriteAction& action = m_actionSprites[i];
@@ -870,6 +946,12 @@ void DynamicPopupBox::layoutExpanded() {
         if (texSize.x > 0 && texSize.y > 0) {
             action.sprite.setScale(btnWidth / static_cast<float>(texSize.x),
                                    btnHeight / static_cast<float>(texSize.y));
+        }
+
+        const unsigned int targetLabelSize = static_cast<unsigned int>(
+            std::max(9.0f, std::min(26.0f, btnHeight * 0.38f)));
+        if (action.label.getCharacterSize() != targetLabelSize) {
+            action.label.setCharacterSize(targetLabelSize);
         }
 
         const float y = btnStartY + static_cast<float>(i) * (btnHeight + gapY);
@@ -881,13 +963,31 @@ void DynamicPopupBox::layoutExpanded() {
         action.label.setPosition(btnX + btnWidth * 0.5f, y + btnHeight * 0.5f - 2.0f);
     }
 
-    m_bidInputBox.setPosition(btnX, popupPos.y + PopupLayout::kButtonsAreaTop + PopupLayout::kButtonsAreaHeight + 8.0f);
+    m_bidInputBox.setPosition(btnX, buttonsAreaTop + buttonsAreaHeight + 8.0f);
     m_bidInputText.setPosition(btnX + 14.0f,
-                               popupPos.y + PopupLayout::kButtonsAreaTop + PopupLayout::kButtonsAreaHeight + 20.0f);
+                               buttonsAreaTop + buttonsAreaHeight + 20.0f);
     m_bidInputHint.setPosition(btnX + 14.0f,
-                               popupPos.y + PopupLayout::kButtonsAreaTop + PopupLayout::kButtonsAreaHeight + 23.0f);
+                               buttonsAreaTop + buttonsAreaHeight + 23.0f);
 
     updateActionVisuals();
+}
+
+void DynamicPopupBox::layoutFullImage() {
+    const sf::Vector2u texSize = m_fullImageTexture.getSize();
+    if (texSize.x == 0 || texSize.y == 0) {
+        return;
+    }
+
+    const float maxWidth = m_windowSize.x * 0.92f;
+    const float maxHeight = m_windowSize.y * 0.92f;
+    const float sx = maxWidth / static_cast<float>(texSize.x);
+    const float sy = maxHeight / static_cast<float>(texSize.y);
+    const float scale = std::min(sx, sy) * 0.5f;
+
+    m_fullImageSprite.setOrigin(static_cast<float>(texSize.x) * 0.5f,
+                                static_cast<float>(texSize.y) * 0.5f);
+    m_fullImageSprite.setScale(scale, scale);
+    m_fullImageSprite.setPosition(m_windowSize.x * 0.5f, m_windowSize.y * 0.5f);
 }
 
 void DynamicPopupBox::layoutMinimized() {

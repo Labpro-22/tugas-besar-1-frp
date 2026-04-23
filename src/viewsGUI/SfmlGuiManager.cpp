@@ -36,6 +36,68 @@
 namespace {
 constexpr const char* kPreTurnSkillUsePrefix = "preturn_skill_use:";
 constexpr const char* kPreTurnSkillSkipAction = "preturn_skill_skip";
+constexpr float kTimedCardPopupDurationSec = 4.0f;
+
+bool isChanceNearestRailroadPayload(const std::string& payload) {
+    return payload == "CHANCE_NEAREST_RAILROAD" || payload == "CHANCE_STASIUN";
+}
+
+bool isChanceMoveBackPayload(const std::string& payload) {
+    return payload == "CHANCE_MOVE_BACK" || payload == "CHANCE_MUNDUR";
+}
+
+bool isChanceGoToJailPayload(const std::string& payload) {
+    return payload == "CHANCE_GO_TO_JAIL" || payload == "CHANCE_PENJARA";
+}
+
+bool isChanceTimedMovementPayload(const std::string& payload) {
+    return isChanceNearestRailroadPayload(payload) ||
+           isChanceMoveBackPayload(payload) ||
+           isChanceGoToJailPayload(payload);
+}
+
+std::vector<int> buildFollowUpPathForTimedChance(const std::string& payload,
+                                                 int fromIndex,
+                                                 int finalIndex,
+                                                 int boardSize) {
+    std::vector<int> path;
+    if (finalIndex < 0) {
+        return path;
+    }
+
+    if (boardSize <= 0) {
+        path.push_back(finalIndex);
+        return path;
+    }
+
+    if (isChanceMoveBackPayload(payload)) {
+        int idx = fromIndex;
+        for (int i = 0; i < 3; ++i) {
+            idx = (idx - 1 + boardSize) % boardSize;
+            path.push_back(idx);
+        }
+        return path;
+    }
+
+    if (isChanceNearestRailroadPayload(payload)) {
+        int idx = fromIndex;
+        for (int i = 0; i < boardSize; ++i) {
+            idx = (idx + 1) % boardSize;
+            path.push_back(idx);
+            if (idx == finalIndex) {
+                break;
+            }
+        }
+        if (path.empty() || path.back() != finalIndex) {
+            path.clear();
+            path.push_back(finalIndex);
+        }
+        return path;
+    }
+
+    path.push_back(finalIndex);
+    return path;
+}
 
 std::string buildMessageFromResult(const CommandResult& result) {
     std::ostringstream out;
@@ -187,6 +249,9 @@ SfmlGuiManager::SfmlGuiManager(GameEngine& engine)
       m_engine(engine),
       m_currentState(GuiState::IDLE),
       m_lastMessage("Siap memulai game."),
+      m_cardTimer(0.0f),
+      m_timedCardPopupFromQueue(false),
+      m_uiBasePath("assets/images/ui/"),
       m_preTurnSkillHandled(false) {
     if (!loadFontWithFallback()) {
         throw std::runtime_error("Gagal memuat font GUI. Pastikan assets/fonts atau font sistem tersedia.");
@@ -201,17 +266,19 @@ SfmlGuiManager::SfmlGuiManager(GameEngine& engine)
     m_diceRenderer = std::make_unique<DiceRenderer>();
     m_popupBox = std::make_unique<DynamicPopupBox>(
         sf::Vector2f(Layout1920::kDesignWidth, Layout1920::kDesignHeight), m_titleFont, m_mainFont);
+    m_debugDicePopup = std::make_unique<DebugDicePopup>(
+        sf::Vector2f(Layout1920::kDesignWidth, Layout1920::kDesignHeight), m_titleFont);
 
     if (!m_boardView->loadAssets("assets/images/board/")) {
         m_lastMessage = "PERINGATAN: Sebagian aset board GUI gagal dimuat.";
     }
-    if (!m_mainUi->loadAssets("assets/images/ui/", "assets/images/board/")) {
+    if (!m_mainUi->loadAssets(m_uiBasePath, "assets/images/board/")) {
         m_lastMessage += "\nPERINGATAN: Sebagian aset UI utama gagal dimuat.";
     }
     if (!m_diceRenderer->loadAssets("assets/images/ui/dice/")) {
         m_lastMessage += "\nPERINGATAN: Aset animasi dadu gagal dimuat.";
     }
-    if (!m_popupBox->loadAssets("assets/images/ui/")) {
+    if (!m_popupBox->loadAssets(m_uiBasePath)) {
         m_lastMessage += "\nPERINGATAN: Aset popup gagal dimuat.";
     }
 
@@ -314,20 +381,40 @@ void SfmlGuiManager::setUiInputEnabled(bool enabled) {
 }
 
 void SfmlGuiManager::submitRollDice() {
+    Command cmd;
+    cmd.type = CommandType::ROLL_DICE;
+    cmd.raw = "LEMPAR_DADU";
+    executeDiceCommand(cmd);
+}
+
+void SfmlGuiManager::submitManualDice(int die1, int die2) {
+    Command cmd;
+    cmd.type = CommandType::SET_DICE;
+    cmd.raw = "ATUR_DADU " + std::to_string(die1) + " " + std::to_string(die2);
+    cmd.args = {std::to_string(die1), std::to_string(die2)};
+    executeDiceCommand(cmd);
+}
+
+void SfmlGuiManager::executeDiceCommand(const Command& cmd) {
     try {
         m_mainUi->setRollVisible(false);
         setUiInputEnabled(false);
         m_pendingPrompts.clear();
+        m_pendingCardEventImagePaths.clear();
+        m_cardTimer = 0.0f;
+        m_timedCardPopupFromQueue = false;
         m_deferredMovement.reset();
-
-        Command cmd;
-        cmd.type = CommandType::ROLL_DICE;
-        cmd.raw = "LEMPAR_DADU";
+        m_timedCardImageAfterLanding.reset();
+        m_timedCardMovementAfterPopup.reset();
+        m_splitMovementForCommand.reset();
 
         const CommandResult result = m_engine.processCommand(cmd);
-        const bool hasMovement = result.movement.has_value();
-        consumeResult(result, !hasMovement);
+        consumeResult(result, !result.movement.has_value());
         enqueuePrompts(result.prompts);
+
+        const std::optional<MovementPayload> movementToAnimate =
+            m_splitMovementForCommand.has_value() ? m_splitMovementForCommand : result.movement;
+        const bool hasMovement = movementToAnimate.has_value();
 
         const Dice& dice = m_engine.getDice();
         const sf::Vector2f boardCenter = m_boardView->getBoardCenter();
@@ -337,10 +424,11 @@ void SfmlGuiManager::submitRollDice() {
                                                boardCenter.y + Layout1920::kDiceCenterOffsetFromBoardCenter.y));
 
         if (hasMovement) {
-            m_deferredMovement = result.movement.value();
+            m_deferredMovement = movementToAnimate.value();
         } else {
             m_deferredMovement.reset();
         }
+        m_splitMovementForCommand.reset();
 
         m_currentState = GuiState::ANIMATING_DICE;
     } catch (const std::exception& e) {
@@ -350,6 +438,31 @@ void SfmlGuiManager::submitRollDice() {
         setUiInputEnabled(true);
         m_currentState = GuiState::IDLE;
     }
+}
+
+void SfmlGuiManager::openDebugDicePopup() {
+    if (!m_debugDicePopup || m_debugDicePopup->isVisible()) {
+        return;
+    }
+    if (m_currentState != GuiState::IDLE || m_popupBox->isVisible()) {
+        return;
+    }
+
+    setUiInputEnabled(false);
+    m_debugDicePopup->show(
+        [this](int die1, int die2) {
+            if (m_debugDicePopup) {
+                m_debugDicePopup->hide();
+            }
+            setUiInputEnabled(true);
+            submitManualDice(die1, die2);
+        },
+        [this]() {
+            if (m_debugDicePopup) {
+                m_debugDicePopup->hide();
+            }
+            setUiInputEnabled(true);
+        });
 }
 
 void SfmlGuiManager::beginMovementAnimation(const MovementPayload& movement) {
@@ -375,6 +488,10 @@ void SfmlGuiManager::enqueuePrompts(const std::vector<PromptRequest>& prompts) {
 
 void SfmlGuiManager::processNextPrompt() {
     if (m_popupBox->isVisible()) {
+        return;
+    }
+
+    if (showPendingCardEventPopup()) {
         return;
     }
 
@@ -717,11 +834,74 @@ void SfmlGuiManager::maybeShowPreTurnSkillPopup() {
     });
 }
 
+void SfmlGuiManager::cacheTimedChanceTransition(const CommandResult& result) {
+    if (result.commandName != "LEMPAR_DADU" && result.commandName != "ATUR_DADU") {
+        return;
+    }
+
+    std::string timedPayload;
+    for (const GameEvent& event : result.events) {
+        if (event.type == GameEventType::CARD && isChanceTimedMovementPayload(event.eventPayload)) {
+            timedPayload = event.eventPayload;
+            break;
+        }
+    }
+
+    if (timedPayload.empty() || !result.movement.has_value()) {
+        return;
+    }
+
+    const MovementPayload& fullMovement = result.movement.value();
+    if (fullMovement.path.size() < 2) {
+        return;
+    }
+
+    const std::string imagePath = mapCardEventPayloadToImage(timedPayload);
+    if (imagePath.empty()) {
+        return;
+    }
+
+    const int chanceLandingIndex = fullMovement.path[fullMovement.path.size() - 2];
+    const int finalIndex = fullMovement.path.back();
+    if (chanceLandingIndex == finalIndex) {
+        return;
+    }
+
+    MovementPayload firstPhase = fullMovement;
+    firstPhase.path.pop_back();
+    if (firstPhase.path.empty()) {
+        return;
+    }
+    firstPhase.toIndex = firstPhase.path.back();
+
+    MovementPayload followUpPhase;
+    followUpPhase.playerIndex = fullMovement.playerIndex;
+    followUpPhase.playerName = fullMovement.playerName;
+    followUpPhase.fromIndex = chanceLandingIndex;
+    followUpPhase.toIndex = finalIndex;
+    followUpPhase.path = buildFollowUpPathForTimedChance(
+        timedPayload, chanceLandingIndex, finalIndex, m_engine.getBoard().size());
+    if (followUpPhase.path.empty()) {
+        followUpPhase.path.push_back(finalIndex);
+    }
+    followUpPhase.toIndex = followUpPhase.path.back();
+
+    m_splitMovementForCommand = firstPhase;
+    m_timedCardImageAfterLanding = imagePath;
+    m_timedCardMovementAfterPopup = followUpPhase;
+}
+
 void SfmlGuiManager::consumeResult(const CommandResult& result, bool syncPiecePositions) {
+    cacheTimedChanceTransition(result);
     m_lastMessage = buildMessageFromResult(result);
+    enqueueCardEventPopups(result);
 
     const Player& current = m_engine.getCurrentPlayer();
-    m_mainUi->updateData(m_engine.getPlayers(), current, m_lastMessage);
+    m_mainUi->updateData(m_engine.getPlayers(),
+                         current,
+                         m_lastMessage,
+                         m_engine.getCurrentTurn(),
+                         m_engine.getMaxTurn());
 
     if (!syncPiecePositions) {
         return;
@@ -736,13 +916,111 @@ void SfmlGuiManager::consumeResult(const CommandResult& result, bool syncPiecePo
 
 void SfmlGuiManager::refreshFromEngineState() {
     const Player& current = m_engine.getCurrentPlayer();
-    m_mainUi->updateData(m_engine.getPlayers(), current, m_lastMessage);
+    m_mainUi->updateData(m_engine.getPlayers(),
+                         current,
+                         m_lastMessage,
+                         m_engine.getCurrentTurn(),
+                         m_engine.getMaxTurn());
 
     const auto& players = m_engine.getPlayers();
     const size_t count = std::min(players.size(), m_players.size());
     for (size_t i = 0; i < count; ++i) {
         m_players[i]->snapTo(m_boardView->getTileCenter(players[i]->getPosition()));
     }
+}
+
+void SfmlGuiManager::updateAllPanels() {
+    refreshFromEngineState();
+}
+
+std::string SfmlGuiManager::mapCardEventPayloadToImage(const std::string& payload) const {
+    if (payload == "CARD_BIRTHDAY") {
+        return m_uiBasePath + "dana_umum_m100.png";
+    }
+    if (payload == "CARD_DOCTOR") {
+        return m_uiBasePath + "dana_umum_m700.png";
+    }
+    if (payload == "CARD_ELECTION") {
+        return m_uiBasePath + "dana_umum_m200x(n-1).png";
+    }
+    if (payload == "CHANCE_NEAREST_RAILROAD" || payload == "CHANCE_STASIUN") {
+        return m_uiBasePath + "kesempatan_stasiun.png";
+    }
+    if (payload == "CHANCE_MOVE_BACK" || payload == "CHANCE_MUNDUR") {
+        return m_uiBasePath + "kesempatan_mundur.png";
+    }
+    if (payload == "CHANCE_GO_TO_JAIL" || payload == "CHANCE_PENJARA") {
+        return m_uiBasePath + "kesempatan_penjara.png";
+    }
+    if (payload == "CHANCE_GET_OUT_OF_JAIL" || payload == "CHANCE_KELUAR") {
+        return m_uiBasePath + "kesempatan_keluar.png";
+    }
+    return "";
+}
+
+void SfmlGuiManager::enqueueCardEventPopups(const CommandResult& result) {
+    for (const GameEvent& event : result.events) {
+        if (event.type != GameEventType::CARD || event.eventPayload.empty()) {
+            continue;
+        }
+        if (isChanceTimedMovementPayload(event.eventPayload)) {
+            continue;
+        }
+
+        const std::string imagePath = mapCardEventPayloadToImage(event.eventPayload);
+        if (!imagePath.empty()) {
+            m_pendingCardEventImagePaths.push_back(imagePath);
+        }
+    }
+}
+
+bool SfmlGuiManager::showPendingCardEventPopup() {
+    if (m_pendingCardEventImagePaths.empty()) {
+        return false;
+    }
+
+    const std::string imagePath = m_pendingCardEventImagePaths.front();
+
+    PopupPayload payload;
+    payload.mode = PopupMode::FULL_IMAGE_DISMISSABLE;
+    payload.cardTemplateImagePath = imagePath;
+
+    m_currentState = GuiState::SHOWING_TIMED_CARD;
+    m_mainUi->setRollVisible(false);
+    setUiInputEnabled(false);
+    m_timedCardPopupFromQueue = true;
+    m_cardTimer = 0.0f;
+    m_timedCardMovementAfterPopup.reset();
+
+    m_popupBox->show(payload, [this](const std::string&) {});
+    return true;
+}
+
+void SfmlGuiManager::dismissTimedCardEventPopup() {
+    if (m_currentState != GuiState::SHOWING_TIMED_CARD) {
+        return;
+    }
+
+    m_cardTimer = 0.0f;
+
+    if (m_popupBox->isVisible()) {
+        m_popupBox->hide();
+    }
+
+    if (m_timedCardPopupFromQueue && !m_pendingCardEventImagePaths.empty()) {
+        m_pendingCardEventImagePaths.pop_front();
+    }
+    m_timedCardPopupFromQueue = false;
+
+    if (m_timedCardMovementAfterPopup.has_value()) {
+        const MovementPayload followUpMovement = m_timedCardMovementAfterPopup.value();
+        m_timedCardMovementAfterPopup.reset();
+        beginMovementAnimation(followUpMovement);
+        return;
+    }
+
+    updateAllPanels();
+    processNextPrompt();
 }
 
 void SfmlGuiManager::run() {
@@ -763,6 +1041,9 @@ void SfmlGuiManager::run() {
 void SfmlGuiManager::processEvents() {
     sf::Event event;
     while (m_window.pollEvent(event)) {
+        const bool debugPopupVisible = m_debugDicePopup && m_debugDicePopup->isVisible();
+        const bool showingTimedCard = (m_currentState == GuiState::SHOWING_TIMED_CARD);
+
         if (event.type == sf::Event::Closed) {
             m_window.close();
             continue;
@@ -774,6 +1055,12 @@ void SfmlGuiManager::processEvents() {
         }
 
         if (event.type == sf::Event::TextEntered) {
+            if (showingTimedCard) {
+                continue;
+            }
+            if (debugPopupVisible) {
+                continue;
+            }
             if (m_popupBox->isVisible() && !m_popupBox->isMinimized() &&
                 m_popupBox->handleTextEntered(event.text.unicode)) {
                 continue;
@@ -781,6 +1068,12 @@ void SfmlGuiManager::processEvents() {
         }
 
         if (event.type == sf::Event::KeyPressed) {
+            if (showingTimedCard) {
+                continue;
+            }
+            if (debugPopupVisible) {
+                continue;
+            }
             if (m_popupBox->isVisible() && !m_popupBox->isMinimized() &&
                 m_popupBox->handleKeyPressed(event.key.code)) {
                 continue;
@@ -790,6 +1083,12 @@ void SfmlGuiManager::processEvents() {
         if (event.type == sf::Event::MouseWheelScrolled) {
             const sf::Vector2f mousePos =
                 m_window.mapPixelToCoords(sf::Mouse::getPosition(m_window), m_baseView);
+            if (showingTimedCard) {
+                continue;
+            }
+            if (debugPopupVisible) {
+                continue;
+            }
             const bool popupBlocksUiInput = m_popupBox->isVisible() && !m_popupBox->isMinimized();
             const bool canInteractUi = (m_currentState == GuiState::IDLE) || m_popupBox->isMinimized();
 
@@ -802,6 +1101,13 @@ void SfmlGuiManager::processEvents() {
         if (event.type == sf::Event::MouseButtonPressed && event.mouseButton.button == sf::Mouse::Left) {
             const sf::Vector2f mousePos =
                 m_window.mapPixelToCoords(sf::Mouse::getPosition(m_window), m_baseView);
+            if (showingTimedCard) {
+                continue;
+            }
+            if (debugPopupVisible) {
+                m_debugDicePopup->handleMousePressed(mousePos, sf::Mouse::Left);
+                continue;
+            }
             const bool popupBlocksUiInput = m_popupBox->isVisible() && !m_popupBox->isMinimized();
             const bool canInteractUi = (m_currentState == GuiState::IDLE) || m_popupBox->isMinimized();
             bool consumedByPopup = false;
@@ -819,6 +1125,13 @@ void SfmlGuiManager::processEvents() {
         if (event.type == sf::Event::MouseButtonReleased && event.mouseButton.button == sf::Mouse::Left) {
             const sf::Vector2f mousePos =
                 m_window.mapPixelToCoords(sf::Mouse::getPosition(m_window), m_baseView);
+            if (showingTimedCard) {
+                continue;
+            }
+            if (debugPopupVisible) {
+                m_debugDicePopup->handleMouseReleased(mousePos, sf::Mouse::Left);
+                continue;
+            }
             const bool popupBlocksUiInput = m_popupBox->isVisible() && !m_popupBox->isMinimized();
             const bool canInteractUi = (m_currentState == GuiState::IDLE) || m_popupBox->isMinimized();
             bool consumedByPopup = false;
@@ -832,6 +1145,36 @@ void SfmlGuiManager::processEvents() {
             }
             continue;
         }
+
+        if (event.type == sf::Event::MouseButtonPressed && event.mouseButton.button == sf::Mouse::Right) {
+            const sf::Vector2f mousePos =
+                m_window.mapPixelToCoords(sf::Mouse::getPosition(m_window), m_baseView);
+            if (showingTimedCard) {
+                continue;
+            }
+            if (debugPopupVisible) {
+                m_debugDicePopup->handleMousePressed(mousePos, sf::Mouse::Right);
+                continue;
+            }
+
+            if (m_currentState == GuiState::IDLE && !m_popupBox->isVisible() &&
+                m_mainUi->isRollDiceButtonHit(mousePos)) {
+                openDebugDicePopup();
+            }
+            continue;
+        }
+
+        if (event.type == sf::Event::MouseButtonReleased && event.mouseButton.button == sf::Mouse::Right) {
+            if (showingTimedCard) {
+                continue;
+            }
+            if (debugPopupVisible) {
+                const sf::Vector2f mousePos =
+                    m_window.mapPixelToCoords(sf::Mouse::getPosition(m_window), m_baseView);
+                m_debugDicePopup->handleMouseReleased(mousePos, sf::Mouse::Right);
+                continue;
+            }
+        }
     }
 }
 
@@ -839,14 +1182,25 @@ void SfmlGuiManager::update(sf::Time dt) {
     const sf::Vector2f mousePos =
         m_window.mapPixelToCoords(sf::Mouse::getPosition(m_window), m_baseView);
 
+    const bool debugPopupVisible = m_debugDicePopup && m_debugDicePopup->isVisible();
     const bool popupExpanded = m_popupBox->isVisible() && !m_popupBox->isMinimized();
-    if (popupExpanded) {
+    if (debugPopupVisible) {
+        m_debugDicePopup->update(mousePos);
+    } else if (popupExpanded) {
         m_popupBox->update(mousePos);
     } else {
         m_mainUi->update(mousePos);
         if (m_popupBox->isVisible()) {
             m_popupBox->update(mousePos);
         }
+    }
+
+    if (m_currentState == GuiState::SHOWING_TIMED_CARD) {
+        m_cardTimer += dt.asSeconds();
+        if (m_cardTimer >= kTimedCardPopupDurationSec) {
+            dismissTimedCardEventPopup();
+        }
+        return;
     }
 
     bool anyMoving = false;
@@ -880,7 +1234,8 @@ void SfmlGuiManager::update(sf::Time dt) {
         }
     }
 
-    if (m_currentState == GuiState::IDLE && !m_popupBox->isVisible()) {
+    if (m_currentState == GuiState::IDLE && !m_popupBox->isVisible() &&
+        (!m_debugDicePopup || !m_debugDicePopup->isVisible())) {
         maybeShowPreTurnSkillPopup();
     }
 }
@@ -900,11 +1255,39 @@ void SfmlGuiManager::render() {
 
     m_mainUi->renderOverlay(m_window);
     m_popupBox->render(m_window);
+    if (m_debugDicePopup) {
+        m_debugDicePopup->render(m_window);
+    }
 
     m_window.display();
 }
 
 void SfmlGuiManager::showLandingPopup(const MovementPayload& movement) {
+    if (movement.toIndex >= 0 && movement.toIndex < m_engine.getBoard().size()) {
+        const Tile& tile = m_engine.getBoard().getTileByIndex(movement.toIndex);
+        if (const auto* cardTile = dynamic_cast<const CardTile*>(&tile)) {
+            if (cardTile->getDrawType() == CardDrawType::CHANCE && m_timedCardImageAfterLanding.has_value()) {
+                PopupPayload timedPayload;
+                timedPayload.mode = PopupMode::FULL_IMAGE_DISMISSABLE;
+                timedPayload.cardTemplateImagePath = m_timedCardImageAfterLanding.value();
+                m_timedCardImageAfterLanding.reset();
+                m_timedCardPopupFromQueue = false;
+                m_cardTimer = 0.0f;
+                m_currentState = GuiState::SHOWING_TIMED_CARD;
+                m_mainUi->setRollVisible(false);
+                setUiInputEnabled(false);
+                m_popupBox->show(timedPayload, [this](const std::string&) {});
+                return;
+            }
+
+            if (cardTile->getDrawType() == CardDrawType::COMMUNITY ||
+                cardTile->getDrawType() == CardDrawType::CHANCE) {
+                processNextPrompt();
+                return;
+            }
+        }
+    }
+
     m_currentState = GuiState::WAITING_CONFIRMATION;
     m_mainUi->setRollVisible(false);
     setUiInputEnabled(false);

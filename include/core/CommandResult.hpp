@@ -33,6 +33,7 @@ struct GameEvent {
     UiTone tone = UiTone::INFO;
     std::string title;
     std::string message;
+    std::string eventPayload;
 };
 
 struct PromptOption {
@@ -66,8 +67,9 @@ struct CommandResult {
     void addEvent(GameEventType type,
                   UiTone tone,
                   const std::string& title,
-                  const std::string& message) {
-        events.push_back(GameEvent{type, tone, title, message});
+                  const std::string& message,
+                  const std::string& eventPayload = "") {
+        events.push_back(GameEvent{type, tone, title, message, eventPayload});
     }
 
     void append(const CommandResult& other) {
