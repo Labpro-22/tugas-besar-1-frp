@@ -28,3 +28,21 @@ public:
     explicit ElectionCard(int amountPerPlayer = 200);
     void apply(Player& player, GameEngine& game) override;
 };
+
+class ArisanCard : public ActionCard {
+private:
+    int amount;
+
+public:
+    explicit ArisanCard(int amount = 300);
+    void apply(Player& player, GameEngine& game) override;
+};
+
+class BegalCard : public ActionCard {
+private:
+    int amount;
+
+public:
+    explicit BegalCard(int amount = 200);
+    void apply(Player& player, GameEngine& game) override;
+};

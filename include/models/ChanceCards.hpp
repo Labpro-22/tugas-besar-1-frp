@@ -28,3 +28,9 @@ public:
     GetOutOfJailCard();
     void apply(Player& player, GameEngine& game) override;
 };
+
+class GoToNearestFestivalCard : public ActionCard {
+public:
+    GoToNearestFestivalCard();
+    void apply(Player& player, GameEngine& game) override;
+};

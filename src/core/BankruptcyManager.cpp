@@ -187,14 +187,18 @@ void BankruptcyManager::transferAssetsToCreditor(Player& debtor,
 
     std::vector<Property*> props = debtor.getOwnedProperties();
     for (Property* prop : props) {
+        const bool wasMortgaged = prop->isMortgaged();
         detail << "- " << prop->getName() << " (" << prop->getCode() << ")";
-        if (prop->isMortgaged()) {
+        if (wasMortgaged) {
             detail << " MORTGAGED [M]";
         }
         detail << "\n";
 
         debtor.removeProperty(prop);
         prop->setOwner(&creditor);
+        if (wasMortgaged) {
+            prop->setStatus(OwnershipStatus::MORTGAGED);
+        }
         creditor.addProperty(prop);
     }
 
@@ -343,8 +347,17 @@ void BankruptcyManager::handleDebt(Player& debtor, int obligation,
     logger.logBankruptcy(debtor.getUsername(), creditorName);
 
     debtor.setStatus(PlayerStatus::BANKRUPT);
-    engine.getTurnManager().removePlayer(
-        engine.getTurnManager().getCurrentPlayerIndex());
+    int debtorIndex = -1;
+    const auto& allPlayers = engine.getPlayers();
+    for (int i = 0; i < static_cast<int>(allPlayers.size()); ++i) {
+        if (allPlayers[i] == &debtor) {
+            debtorIndex = i;
+            break;
+        }
+    }
+    if (debtorIndex >= 0) {
+        engine.getTurnManager().removePlayer(debtorIndex);
+    }
 
     if (creditor) {
         transferAssetsToCreditor(debtor, *creditor);

@@ -9,11 +9,15 @@ GoToJailTile::GoToJailTile(int index, JailTile& jailTile,
     : Tile(index, code, name), jailTile(jailTile) {}
 
 void GoToJailTile::onLand(Player& player, GameEngine& engine) {
-    jailTile.sendToJail(player);
+    (void)jailTile;
+    const bool jailed = engine.sendPlayerToJail(player, "PPJ");
     engine.getLogger().log(player.getUsername(), "PPJ",
-        "Mendarat di PPJ dan dipindahkan ke penjara.");
-    engine.pushEvent(GameEventType::MOVEMENT, UiTone::ERROR,
+        jailed
+            ? "Mendarat di PPJ dan dipindahkan ke penjara."
+            : "Mendarat di PPJ, kartu Bebas dari Penjara terpakai.");
+    engine.pushEvent(GameEventType::MOVEMENT, jailed ? UiTone::ERROR : UiTone::INFO,
         "Pergi ke Penjara",
-        player.getUsername() + " mendarat di PPJ! Bidak dipindah ke Penjara. "
-        "Giliran berakhir.");
+        jailed
+            ? (player.getUsername() + " mendarat di PPJ! Bidak dipindah ke Penjara. Giliran berakhir.")
+            : (player.getUsername() + " mendarat di PPJ tetapi menggunakan kartu Bebas dari Penjara."));
 }

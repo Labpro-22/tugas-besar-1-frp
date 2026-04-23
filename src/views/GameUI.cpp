@@ -230,7 +230,7 @@ void GameUI::printStatusBar() const {
                 << " | Ketik BAYAR_DENDA atau LEMPAR_DADU";
         }
 
-        if (cur.countCards() > 0) {
+        if (cur.countCards() > 0 || cur.hasJailFreeCard()) {
             bar << " | Kartu: ";
             const auto& cards = cur.getHandCards();
             for (size_t i = 0; i < cards.size(); ++i) {
@@ -238,6 +238,12 @@ void GameUI::printStatusBar() const {
                 bar << (i + 1) << "." << cards[i]->getTypeName();
                 if (cards[i]->getValue() > 0)
                     bar << "(" << cards[i]->getValue() << ")";
+            }
+            if (cur.hasJailFreeCard()) {
+                if (!cards.empty()) {
+                    bar << ", ";
+                }
+                bar << "4.GetOutOfJailCard";
             }
         }
         bar << " ]";

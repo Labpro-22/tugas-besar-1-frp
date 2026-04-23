@@ -353,7 +353,7 @@ SavedPlayerState Gamestateserializer::parsePlayer(istringstream& ss) const {
 
     int numCards = 0;
     ss >> numCards;
-    if (ss.fail() || numCards < 0 || numCards > 3) {
+    if (ss.fail() || numCards < 0 || numCards > 4) {
         throw SaveLoadException("Invalid number of cards for player " + username);
     }
     ss.ignore();

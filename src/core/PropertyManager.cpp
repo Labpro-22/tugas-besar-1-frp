@@ -301,10 +301,6 @@ bool PropertyManager::redeemProperty(Player& player, Property& prop) {
     }
 
     int cost = prop.getPurchasePrice();
-    if (prop.getType() == PropertyType::RAILROAD ||
-        prop.getType() == PropertyType::UTILITY) {
-        cost = prop.getMortgageValue() * 2;
-    }
 
     if (!player.canAfford(cost)) {
         engine.pushEvent(GameEventType::PROPERTY, UiTone::WARNING,
@@ -333,15 +329,19 @@ bool PropertyManager::buildOnProperty(Player& player, StreetProperty& prop) {
         throw MaxBuildingLevelException(prop.getCode());
     }
 
-    bool upgradeToHotel = (prop.getBuildingLevel() == BuildingLevel::HOUSE_4);
-    if (upgradeToHotel) {
-        for (auto* sp : getColorGroup(cg)) {
-            if (sp->getBuildingLevel() != BuildingLevel::HOUSE_4) {
-                throw GameException(
-                    "Semua petak [" + cg + "] harus 4 rumah dulu.");
-            }
-        }
+    const auto buildableTiles = getBuildableTilesInGroup(player, cg);
+    const bool canBuildHere = std::any_of(
+        buildableTiles.begin(), buildableTiles.end(),
+        [&prop](const StreetProperty* candidate) {
+            return candidate == &prop;
+        });
+    if (!canBuildHere) {
+        throw GameException(
+            "Pembangunan harus merata. Pilih petak dengan level bangunan terendah di color group [" +
+            cg + "].");
     }
+
+    bool upgradeToHotel = (prop.getBuildingLevel() == BuildingLevel::HOUSE_4);
 
     int cost = upgradeToHotel ? prop.getHotelCost() : prop.getHouseCost();
     const std::string promptKey = "bangun_" + prop.getCode();

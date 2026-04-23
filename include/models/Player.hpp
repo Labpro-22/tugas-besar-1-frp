@@ -25,7 +25,7 @@ private:
     vector<std::shared_ptr<SkillCard>> handCards;
     bool hasUsedSkillThisTurn_;
     bool shieldActive;
-    int  jailFreeCards;
+    bool hasJailFreeChanceCard_;
     int  jailTurns;
     int  consecutiveDoubles;
     int  discountPercent;

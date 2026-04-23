@@ -22,11 +22,14 @@ void CardManager::initializeDecks() {
     chanceDeck.addCard(std::make_shared<MoveBackCard>(3));
     chanceDeck.addCard(std::make_shared<GoToJailCard>());
     chanceDeck.addCard(std::make_shared<GetOutOfJailCard>());
+    chanceDeck.addCard(std::make_shared<GoToNearestFestivalCard>());
 
     // Community deck (tanpa salinan)
     communityDeck.addCard(std::make_shared<BirthdayCard>(100));
     communityDeck.addCard(std::make_shared<DoctorFeeCard>(700));
     communityDeck.addCard(std::make_shared<ElectionCard>(200));
+    communityDeck.addCard(std::make_shared<ArisanCard>(300));
+    communityDeck.addCard(std::make_shared<BegalCard>(200));
 
     // Skill deck (sesuai jumlah lembar di spesifikasi)
     for (int i = 0; i < 4; ++i) skillDeck.addCard(std::make_shared<MoveCard>(0));

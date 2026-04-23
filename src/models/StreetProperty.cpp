@@ -1,4 +1,5 @@
 #include "../../include/models/StreetProperty.hpp"
+#include "../../include/models/Board.hpp"
 #include "../../include/models/GameContext.hpp"
 #include "../../include/models/Player.hpp"
 #include "../../include/utils/GameException.hpp"
@@ -31,23 +32,24 @@ int StreetProperty::calculateRent(const GameContext& ctx) const {
     int lvl  = static_cast<int>(buildingLevel);
     int base = rentLevels[lvl];
 
-    bool monopoly = false;
     if (buildingLevel == BuildingLevel::NONE) {
-        int owned = 0;
-        int total = 0;
-        for (const Player* p : ctx.getAllPlayers()) {
-            const auto& props = p->getOwnedProperties();
-            for (const Property* prop : props) {
-                if (prop->getType() != PropertyType::STREET) continue;
-                const StreetProperty* sp =
-                    static_cast<const StreetProperty*>(prop);
-                if (sp->getColorGroup() == colorGroup) {
-                    total++;
-                    if (prop->getOwner() == owner) owned++;
+        bool monopoly = false;
+        const Board* board = ctx.getBoard();
+        if (board != nullptr) {
+            const auto groupTiles = board->getPropertyTilesByColorGroup(colorGroup);
+            monopoly = !groupTiles.empty();
+            for (const auto* tile : groupTiles) {
+                if (!tile) {
+                    monopoly = false;
+                    break;
+                }
+                if (tile->getProperty().getOwner() != owner) {
+                    monopoly = false;
+                    break;
                 }
             }
         }
-        monopoly = (owned > 0 && owned == total && total > 0);
+
         if (monopoly) base *= 2;
     }
 
@@ -109,4 +111,4 @@ int StreetProperty::getBuildingCount() const {
 
 const std::vector<int>& StreetProperty::getRentLevels() const {
     return rentLevels;
-}
+}

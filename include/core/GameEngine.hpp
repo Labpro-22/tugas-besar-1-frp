@@ -110,6 +110,7 @@ class GameEngine{
         CommandResult executeTurn();
         CommandResult moveCurrentPlayer(int steps);
         void handleLanding(Player& p, Tile& t);
+        bool sendPlayerToJail(Player& player, const std::string& source);
         void checkWinCondition();
         void endGame();
 

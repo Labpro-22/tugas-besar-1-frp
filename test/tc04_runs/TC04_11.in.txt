@@ -1,0 +1,4 @@
+LOAD
+test/tc04_runs/TC04_11.txt
+CETAK_PROPERTI
+KELUAR

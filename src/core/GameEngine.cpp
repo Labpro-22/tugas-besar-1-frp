@@ -1229,7 +1229,7 @@ CommandResult GameEngine::moveCurrentPlayer(int steps) {
         "Memajukan Bidak " + player.getUsername() + " sebanyak " + std::to_string(steps) + " petak..."
     );
 
-    if (crossedGo && !landedOnGoToJail) {
+    if (crossedGo && !landedOnGoToJail && landing.getCode() != "GO") {
         awardPassGoSalary(player);
         result.addEvent(
             GameEventType::MONEY,
@@ -1257,22 +1257,17 @@ void GameEngine::continueTurnAfterDiceResolution(CommandResult& flowResult,
     if (rolledDouble) {
         current.incrementConsecutiveDoubles();
         if (current.getConsecutiveDoubles() >= 3) {
-            if (!board) {
-                throw GameException("processCommand: board belum diinisialisasi");
-            }
-
-            current.setPosition(board->getIndexOf("PEN"));
-            current.setStatus(PlayerStatus::JAILED);
-            current.setJailTurns(0);
-            current.resetConsecutiveDoubles();
+            const bool jailed = sendPlayerToJail(current, "Triple Double");
 
             flowResult.addEvent(
                 GameEventType::DICE,
-                UiTone::WARNING,
+                jailed ? UiTone::WARNING : UiTone::INFO,
                 "Triple Double",
                 current.getUsername() +
-                    " melempar double 3 kali berturut-turut. Bidak langsung "
-                    "dipindah ke penjara dan giliran berakhir.");
+                    " melempar double 3 kali berturut-turut. " +
+                    (jailed
+                        ? "Bidak dipindah ke penjara dan giliran berakhir."
+                        : "Kartu Bebas dari Penjara terpakai, jadi tidak dipenjara."));
 
             flowResult.append(executeTurn());
             return;
@@ -1334,6 +1329,34 @@ void GameEngine::handleLanding(Player& p, Tile& t) {
     t.onLand(p, *this);
 }
 
+bool GameEngine::sendPlayerToJail(Player& player, const std::string& source) {
+    if (!board) {
+        throw GameException("Board belum diinisialisasi");
+    }
+
+    player.setPosition(board->getIndexOf("PEN"));
+    if (player.consumeJailFreeCard()) {
+        player.setStatus(PlayerStatus::ACTIVE);
+        player.setJailTurns(0);
+        player.resetConsecutiveDoubles();
+        pushEvent(GameEventType::CARD, UiTone::SUCCESS,
+            "Kartu Kesempatan",
+            player.getUsername() +
+                " menggunakan kartu Bebas dari Penjara saat efek \"" + source +
+                "\". Pemain tidak jadi dipenjara.");
+        if (logger) {
+            logger->log(player.getUsername(), "KARTU_KESEMPATAN",
+                "Gunakan Bebas dari Penjara (" + source + ")");
+        }
+        return false;
+    }
+
+    player.setStatus(PlayerStatus::JAILED);
+    player.setJailTurns(0);
+    player.resetConsecutiveDoubles();
+    return true;
+}
+
 void GameEngine::checkWinCondition() {
     int activeCount = 0;
     for (Player* player : players) {
@@ -1349,8 +1372,15 @@ void GameEngine::checkWinCondition() {
     }
 
     if (maxTurn > 0 && getCurrentTurn() >= maxTurn) {
-        gameOverReason_ = GameOverReason::MAX_TURN;
-        endGame();
+        const bool exceededMaxTurn = (getCurrentTurn() > maxTurn);
+        const bool isLastPlayerInRound =
+            turnManager.orderSize() <= 1 ||
+            turnManager.getCurrentOrderIndex() == (turnManager.orderSize() - 1);
+
+        if (exceededMaxTurn || isLastPlayerInRound) {
+            gameOverReason_ = GameOverReason::MAX_TURN;
+            endGame();
+        }
     }
 }
 
@@ -1362,19 +1392,54 @@ void GameEngine::endGame() {
         if (p && !p->isBankrupt()) active.push_back(p);
     }
 
-    // Tentukan pemenang: kekayaan → properti → kartu → semua seri
+    // Tentukan pemenang berdasarkan mode akhir permainan:
+    // - MAX_TURN: uang -> properti -> kartu
+    // - BANKRUPTCY: kekayaan -> properti -> kartu (tetap kompatibel dengan behavior lama)
+    auto betterPlayer = [this](const Player* a, const Player* b) {
+        if (gameOverReason_ == GameOverReason::MAX_TURN) {
+            if (a->getMoney() != b->getMoney()) {
+                return a->getMoney() > b->getMoney();
+            }
+        } else {
+            if (a->getTotalWealth() != b->getTotalWealth()) {
+                return a->getTotalWealth() > b->getTotalWealth();
+            }
+        }
+
+        if (a->countProperties() != b->countProperties()) {
+            return a->countProperties() > b->countProperties();
+        }
+        if (a->countCards() != b->countCards()) {
+            return a->countCards() > b->countCards();
+        }
+
+        // Tie-break deterministik untuk menjaga hasil sort konsisten.
+        return a->getUsername() < b->getUsername();
+    };
+
+    auto sameRankAsTop = [this](const Player* p, const Player* top) {
+        if (gameOverReason_ == GameOverReason::MAX_TURN) {
+            return p->getMoney() == top->getMoney() &&
+                   p->countProperties() == top->countProperties() &&
+                   p->countCards() == top->countCards();
+        }
+
+        return p->getTotalWealth() == top->getTotalWealth() &&
+               p->countProperties() == top->countProperties() &&
+               p->countCards() == top->countCards();
+    };
+
     std::vector<Player*> winners;
     if (active.size() == 1) {
         winners = active;
     } else if (!active.empty()) {
-        std::sort(active.begin(), active.end(), [](Player* a, Player* b) {
-            return *a > *b;
-        });
+        std::sort(active.begin(), active.end(),
+                  [&betterPlayer](Player* a, Player* b) {
+                      return betterPlayer(a, b);
+                  });
         Player* top = active[0];
         for (Player* p : active) {
-            if (p->getTotalWealth() == top->getTotalWealth() &&
-                p->countProperties() == top->countProperties() &&
-                p->countCards() == top->countCards()) {
+            if (sameRankAsTop(p, top)) {
                 winners.push_back(p);
             }
         }
@@ -1535,6 +1600,9 @@ GameSnapshot GameEngine::createSnapshot() const {
             }
             savedPlayer.addCard(SavedCardState(typeName, cardValue, cardDuration));
         }
+        if (player->hasJailFreeCard()) {
+            savedPlayer.addCard(SavedCardState("GetOutOfJailCard", "", ""));
+        }
 
         snapshot.addPlayer(savedPlayer);
         playerToName[player] = player->getUsername();
@@ -1646,6 +1714,11 @@ void GameEngine::applySnapshot(const GameSnapshot& snapshot) {
         // Restore skill cards from save
         if (cardManager) {
             for (const SavedCardState& savedCard : saved.getCards()) {
+                if (savedCard.getType() == "GetOutOfJailCard") {
+                    player->addJailFreeCard();
+                    continue;
+                }
+
                 auto skillCard = cardManager->createSkillCardByType(savedCard.getType());
                 if (!savedCard.getValue().empty()) {
                     try {
