@@ -24,7 +24,7 @@ AuctionManager::AuctionManager(GameEngine& engine, Bank& bank,
       logger(logger),
       auctionedProp(nullptr),
       highestBidder(nullptr),
-      highestBid(0),
+      highestBid(-1),
       consecutivePasses(0),
       atLeastOneBid(false),
       auctionActive(false),
@@ -32,25 +32,61 @@ AuctionManager::AuctionManager(GameEngine& engine, Bank& bank,
 
 std::vector<Player*> AuctionManager::buildAuctionOrder(
     Player* triggerPlayer, bool excludeBankrupt) const {
-    (void)excludeBankrupt;
+    const auto& allPlayers = engine.getPlayers();
+    const auto& turnOrder = engine.getTurnManager().getTurnOrder();
+    if (turnOrder.empty()) {
+        return {};
+    }
 
-    std::vector<Player*> allActive = engine.getActivePlayers();
-    int triggerIdx = -1;
-    for (int i = 0; i < static_cast<int>(allActive.size()); ++i) {
-        if (allActive[i] == triggerPlayer) {
-            triggerIdx = i;
-            break;
+    int startOrderIndex = engine.getTurnManager().getCurrentOrderIndex();
+    if (triggerPlayer != nullptr) {
+        int triggerPlayerIndex = -1;
+        for (int i = 0; i < static_cast<int>(allPlayers.size()); ++i) {
+            if (allPlayers[i] == triggerPlayer) {
+                triggerPlayerIndex = i;
+                break;
+            }
+        }
+
+        if (triggerPlayerIndex >= 0) {
+            for (int i = 0; i < static_cast<int>(turnOrder.size()); ++i) {
+                if (turnOrder[i] == triggerPlayerIndex) {
+                    startOrderIndex = (i + 1) % static_cast<int>(turnOrder.size());
+                    break;
+                }
+            }
+        } else {
+            startOrderIndex = (startOrderIndex + 1) % static_cast<int>(turnOrder.size());
         }
     }
 
-    if (triggerIdx == -1) {
-        return allActive;
+    std::vector<Player*> order;
+    order.reserve(turnOrder.size());
+    for (int offset = 0; offset < static_cast<int>(turnOrder.size()); ++offset) {
+        const int orderIndex = (startOrderIndex + offset) % static_cast<int>(turnOrder.size());
+        const int playerIndex = turnOrder[orderIndex];
+        if (playerIndex < 0 || playerIndex >= static_cast<int>(allPlayers.size())) {
+            continue;
+        }
+
+        Player* candidate = allPlayers[playerIndex];
+        if (!candidate) {
+            continue;
+        }
+        if (excludeBankrupt && candidate->isBankrupt()) {
+            continue;
+        }
+        if (!excludeBankrupt || !candidate->isBankrupt()) {
+            order.push_back(candidate);
+        }
     }
 
-    std::vector<Player*> order;
-    const int n = static_cast<int>(allActive.size());
-    for (int i = 1; i <= n; ++i) {
-        order.push_back(allActive[(triggerIdx + i) % n]);
+    if (order.empty() && !excludeBankrupt) {
+        for (Player* player : allPlayers) {
+            if (player) {
+                order.push_back(player);
+            }
+        }
     }
     return order;
 }
@@ -58,7 +94,7 @@ std::vector<Player*> AuctionManager::buildAuctionOrder(
 void AuctionManager::resetState() {
     auctionedProp = nullptr;
     highestBidder = nullptr;
-    highestBid = 0;
+    highestBid = -1;
     consecutivePasses = 0;
     atLeastOneBid = false;
     auctionActive = false;
@@ -112,9 +148,10 @@ void AuctionManager::continueAuction() {
         const int totalActive = static_cast<int>(auctionOrder.size());
         const int passesNeeded = std::max(0, totalActive - 1);
         const bool mustBid = (!atLeastOneBid && consecutivePasses >= passesNeeded);
+        const int shownHighestBid = std::max(0, highestBid);
 
         std::ostringstream info;
-        info << "--\n\nPenawaran tertinggi saat ini: M" << highestBid;
+        info << "--\n\nPenawaran tertinggi saat ini: M" << shownHighestBid;
         if (highestBidder) {
             info << " (" << highestBidder->getUsername() << ")";
         }
@@ -177,7 +214,7 @@ void AuctionManager::continueAuction() {
         if (input.rfind("BID ", 0) == 0 || input == "BID_MIN") {
             int bidAmount = 0;
             if (input == "BID_MIN") {
-                bidAmount = highestBid + 1;
+                bidAmount = std::max(0, highestBid + 1);
             } else {
                 try {
                     bidAmount = std::stoi(input.substr(4));
@@ -192,7 +229,7 @@ void AuctionManager::continueAuction() {
                 engine.pushEvent(GameEventType::AUCTION, UiTone::WARNING,
                     "Bid Terlalu Rendah",
                     "Bid harus lebih besar dari M" +
-                        std::to_string(highestBid) + ".");
+                        std::to_string(shownHighestBid) + ".");
                 continue;
             }
 

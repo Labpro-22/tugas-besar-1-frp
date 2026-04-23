@@ -45,11 +45,11 @@ void test_cardmanager_drawSkillCard_createsPendingAtFourthCard() {
     assert(cm.hasPendingSkillDrop(player));
 
     const std::vector<std::string> options = cm.getPendingSkillDropOptions(player);
-    assert(options.size() == 4);
-    std::cout << "[PASS] Kartu ke-4 masuk mekanisme pending drop\n";
+    assert(options.size() == 3);
+    std::cout << "[PASS] Kartu ke-4 masuk mekanisme pending drop tanpa mengisi slot 4 inventory\n";
 }
 
-void test_cardmanager_resolvePendingDrop_discardNewCard() {
+void test_cardmanager_resolvePendingDrop_swapExistingCard() {
     CardManager cm;
     cm.initializeDecks();
 
@@ -62,12 +62,12 @@ void test_cardmanager_resolvePendingDrop_discardNewCard() {
     cm.drawSkillCard(player);
     assert(cm.hasPendingSkillDrop(player));
 
-    cm.resolvePendingSkillDrop(player, 3);
+    cm.resolvePendingSkillDrop(player, 1);
 
     assert(!cm.hasPendingSkillDrop(player));
     assert(player.countCards() == 3);
-    assert(handTypeNames(player) == before);
-    std::cout << "[PASS] resolvePendingSkillDrop dapat membuang kartu baru (index 4)\n";
+    assert(handTypeNames(player) != before);
+    std::cout << "[PASS] resolvePendingSkillDrop menukar salah satu skill card di slot 1-3\n";
 }
 
 void test_cardmanager_resolvePendingDrop_replaceHandCard() {
@@ -104,14 +104,14 @@ void test_cardmanager_resolvePendingDrop_invalidIndexThrows() {
 
     bool threw = false;
     try {
-        cm.resolvePendingSkillDrop(player, 4);
+        cm.resolvePendingSkillDrop(player, 3);
     } catch (const InvalidCardIndexException&) {
         threw = true;
     }
 
     assert(threw);
     assert(cm.hasPendingSkillDrop(player));
-    std::cout << "[PASS] resolvePendingSkillDrop melempar InvalidCardIndexException untuk index invalid\n";
+    std::cout << "[PASS] resolvePendingSkillDrop melempar InvalidCardIndexException untuk slot di luar 1-3\n";
 }
 
 void test_cardmanager_saveLoadState_roundTrip() {
@@ -136,7 +136,7 @@ void run_card_tests() {
     std::cout << "\n=== Unit Test: Card ===\n";
     test_cardmanager_drawSkillCard_addsToHand();
     test_cardmanager_drawSkillCard_createsPendingAtFourthCard();
-    test_cardmanager_resolvePendingDrop_discardNewCard();
+    test_cardmanager_resolvePendingDrop_swapExistingCard();
     test_cardmanager_resolvePendingDrop_replaceHandCard();
     test_cardmanager_resolvePendingDrop_invalidIndexThrows();
     test_cardmanager_saveLoadState_roundTrip();

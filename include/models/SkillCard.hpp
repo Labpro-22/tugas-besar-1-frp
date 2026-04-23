@@ -12,6 +12,7 @@ public:
     ~SkillCard() override = default;
 
     bool canUseBeforeRoll() const;
+    InventoryCardState getInventoryState() const override;
 
     int getValue() const;
     int getDuration() const;

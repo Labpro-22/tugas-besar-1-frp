@@ -23,6 +23,12 @@ class TransactionLogger;
 class SaveLoadManager;
 class GameSnapshot;
 
+enum class GameOverReason {
+    NONE,
+    BANKRUPTCY,
+    MAX_TURN
+};
+
 class GameEngine{
     private:
         Board* board;
@@ -32,6 +38,7 @@ class GameEngine{
         bool turnActionTaken;
         bool diceRolledThisTurn;
         bool extraRollAllowedThisTurn;
+        GameOverReason gameOverReason_;
         int maxTurn;
         int initialBalance;
         int goSalary;
@@ -58,9 +65,11 @@ class GameEngine{
         void initBoard();
         void handleJailTurn(Player& p);
         void awardPassGoSalary(Player& p);
+        void continueTurnAfterDiceResolution(CommandResult& result, Player& player,
+                                             int totalSteps, bool rolledDouble);
         std::vector<bool> buildBankruptFlags() const;
         void resetTurnActionFlags();
-        CommandResult handlePendingSkillDropPrompt();
+        CommandResult handlePendingSkillDropPrompt(const std::string& pendingUsername = "");
     
     public:
         GameEngine();
@@ -73,6 +82,9 @@ class GameEngine{
                        const std::string& title, const std::string& msg,
                        const std::string& eventPayload = "");
         void pushPrompt(const PromptRequest& prompt);
+        void pushPrompt(const std::string& key, const std::string& msg,
+                        const std::vector<std::string>& options,
+                        bool required);
         void pushPrompt(const std::string& key, const std::string& msg,
                         const std::vector<std::string>& options = {},
                         bool required = true,
@@ -99,6 +111,7 @@ class GameEngine{
         CommandResult executeTurn();
         CommandResult moveCurrentPlayer(int steps);
         void handleLanding(Player& p, Tile& t);
+        bool sendPlayerToJail(Player& player, const std::string& source);
         void checkWinCondition();
         void endGame();
 

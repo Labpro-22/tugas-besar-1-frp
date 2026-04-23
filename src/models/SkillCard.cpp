@@ -7,6 +7,10 @@ bool SkillCard::canUseBeforeRoll() const {
     return true;
 }
 
+InventoryCardState SkillCard::getInventoryState() const {
+    return InventoryCardState::SKILL;
+}
+
 int SkillCard::getValue() const {
     return value;
 }

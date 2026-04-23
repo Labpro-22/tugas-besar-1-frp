@@ -65,18 +65,76 @@ GoToJailCard::GoToJailCard()
     : ActionCard("Masuk Penjara.") {}
 
 void GoToJailCard::apply(Player& player, GameEngine& game) {
-    Board& board = game.getBoard();
-    const int jailIndex = board.getIndexOf("PEN");
-
-    player.setPosition(jailIndex);
-    player.setStatus(PlayerStatus::JAILED);
-    player.setJailTurns(0);
+    const bool jailed = game.sendPlayerToJail(player, "Kartu Kesempatan");
+    if (jailed) {
+        game.pushEvent(GameEventType::MOVEMENT, UiTone::ERROR,
+            "Kartu Kesempatan",
+            player.getUsername() + " langsung dipindah ke penjara.");
+    }
 }
 
 GetOutOfJailCard::GetOutOfJailCard()
     : ActionCard("Bebas dari Penjara.") {}
 
+InventoryCardState GetOutOfJailCard::getInventoryState() const {
+    return InventoryCardState::CHANCE_SPECIAL;
+}
+
 void GetOutOfJailCard::apply(Player& player, GameEngine& game) {
-    (void)game;
-    player.addJailFreeCard();
+    if (!player.canStoreInSpecialInventorySlot(*this)) {
+        throw GameException(
+            "Slot inventory terakhir hanya boleh diisi kartu kesempatan.");
+    }
+
+    if (!player.storeCardInSpecialInventorySlot(*this)) {
+        game.pushEvent(GameEventType::CARD, UiTone::INFO,
+            "Kartu Kesempatan",
+            "Kartu Bebas dari Penjara duplikat dibuang karena slot 4 sudah terisi.");
+        return;
+    }
+
+    game.pushEvent(GameEventType::CARD, UiTone::SUCCESS,
+        "Kartu Kesempatan",
+        "Kartu Bebas dari Penjara disimpan pada slot 4 inventory.");
+}
+
+GoToNearestFestivalCard::GoToNearestFestivalCard()
+    : ActionCard("Pergi ke Festival terdekat.") {}
+
+void GoToNearestFestivalCard::apply(Player& player, GameEngine& game) {
+    Board& board = game.getBoard();
+
+    const int current = player.getPosition();
+    int bestIndex = -1;
+
+    // "Pergi ke Festival terdekat" diartikan sebagai bergerak maju
+    // ke tile Festival pertama yang ditemui saat menyusuri papan.
+    for (int step = 1; step <= board.size(); ++step) {
+        const int idx = (current + step) % board.size();
+        if (board.getTileByIndex(idx).getCode() != "FES") {
+            continue;
+        }
+        bestIndex = idx;
+        break;
+    }
+
+    if (bestIndex < 0) {
+        throw GameException("No festival tile found for GoToNearestFestivalCard.");
+    }
+
+    if (bestIndex < current) {
+        player.addMoney(game.getGoSalary());
+        game.pushEvent(GameEventType::MONEY, UiTone::SUCCESS,
+            "Lewat GO",
+            player.getUsername() + " menerima gaji GO sebesar M" +
+                std::to_string(game.getGoSalary()) + ".");
+    }
+
+    player.setPosition(bestIndex);
+    game.pushEvent(GameEventType::MOVEMENT, UiTone::INFO,
+        "Kartu Kesempatan",
+        player.getUsername() + " dipindahkan ke Festival terdekat.");
+
+    Tile& landing = board.getTileByIndex(bestIndex);
+    game.handleLanding(player, landing);
 }

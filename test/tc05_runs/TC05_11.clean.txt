@@ -1,0 +1,31 @@
+[2J[H[1m+------------------------------+
+¦     NIMONSPOLI CLI - FRP     ¦
++------------------------------+
+[0mKetik BANTUAN untuk daftar perintah.
+Ketik KELUAR untuk menutup program.
+
+Menu awal [NEW/LOAD] (default NEW): Nama file save (.txt, default file_save.txt): [32mState permainan berhasil dimuat dari file: test/tc05_runs/TC05_11.txt[0m
+
+[2m[ Giliran: Bob | Uang: M10 | Turn: 1/15 ][0m
+[1m> [0mDadu diatur secara manual.
+Hasil: 1 + 1 = 2
+Memajukan Bidak Bob sebanyak 2 petak...
+[32mBob menerima gaji GO sebesar M200.[0m
+Bidak mendarat di: GARUT.
+[31mTidak bisa bayar M250 ke Alice
+Uang: M210
+Kewajiban: M250
+Kekurangan: M40
+
+Estimasi likuidasi maksimum:
+  Total potensi: M210[0m
+[31mBob dinyatakan BANGKRUT.
+Kreditor: Alice[0m
+[33mPlayer Bob bangkrut!
+Semua properti dan sisa uang Bob telah diserahkan kepada Alice.[0m
+[31mBob keluar. Tersisa 1 pemain aktif.[0m
+Bob mendapatkan giliran tambahan karena melempar double.
+
+[2m[ Giliran: Alice | Uang: M1210 | Turn: 1/15 ][0m
+[1m> [0mSampai jumpa!
+

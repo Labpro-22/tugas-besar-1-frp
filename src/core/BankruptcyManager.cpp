@@ -187,14 +187,18 @@ void BankruptcyManager::transferAssetsToCreditor(Player& debtor,
 
     std::vector<Property*> props = debtor.getOwnedProperties();
     for (Property* prop : props) {
+        const bool wasMortgaged = prop->isMortgaged();
         detail << "- " << prop->getName() << " (" << prop->getCode() << ")";
-        if (prop->isMortgaged()) {
+        if (wasMortgaged) {
             detail << " MORTGAGED [M]";
         }
         detail << "\n";
 
         debtor.removeProperty(prop);
         prop->setOwner(&creditor);
+        if (wasMortgaged) {
+            prop->setStatus(OwnershipStatus::MORTGAGED);
+        }
         creditor.addProperty(prop);
     }
 
@@ -205,7 +209,8 @@ void BankruptcyManager::transferAssetsToCreditor(Player& debtor,
         "Semua properti dan sisa uang " + debtor.getUsername() + " telah diserahkan kepada " + creditor.getUsername() + ".");
 }
 
-void BankruptcyManager::returnAssetsToBank(Player& debtor) {
+std::vector<Property*> BankruptcyManager::returnAssetsToBank(Player& debtor) {
+    std::vector<Property*> reclaimedProps;
     std::ostringstream detail;
     detail << "Uang sisa M" << debtor.getMoney() << " diserahkan ke Bank.\n";
     debtor.deductMoney(debtor.getMoney());
@@ -221,6 +226,7 @@ void BankruptcyManager::returnAssetsToBank(Player& debtor) {
             }
         }
         bank.reclaim(prop);
+        reclaimedProps.push_back(prop);
     }
 
     logger.logAssetTransfer(debtor.getUsername(), "BANK", "Aset dikembalikan ke Bank (bangkrut)");
@@ -228,31 +234,41 @@ void BankruptcyManager::returnAssetsToBank(Player& debtor) {
         "Bangkrut", "Player " + debtor.getUsername() + " bangkrut!\n"
         "Semua properti " + debtor.getUsername() + " telah disita oleh Bank dan akan dilelang.\n"
         "Bangunan yang ada di properti tersebut telah dihancurkan.");
+    return reclaimedProps;
 }
 
-void BankruptcyManager::auctionAllBankProperties(Player& debtor) {
-    std::vector<Property*> toAuction;
-    for (Property* prop : bank.getBankProperties()) {
-        if (!prop->getOwner()) {
-            toAuction.push_back(prop);
+void BankruptcyManager::auctionBankruptAssets(
+    const std::vector<Property*>& properties,
+    std::size_t startIndex) {
+    int auctionableCount = 0;
+    for (Property* prop : properties) {
+        if (prop && prop->getOwner() == nullptr && bank.ownsProperty(prop)) {
+            ++auctionableCount;
         }
     }
 
-    if (toAuction.empty()) {
+    if (auctionableCount == 0) {
         return;
     }
 
-    engine.pushEvent(GameEventType::BANKRUPTCY, UiTone::INFO,
-        "Lelang Aset",
-        std::to_string(toAuction.size()) +
-            " properti bank tersedia untuk dilelang.");
+    if (startIndex == 0) {
+        engine.pushEvent(GameEventType::BANKRUPTCY, UiTone::INFO,
+            "Lelang Aset",
+            std::to_string(auctionableCount) +
+                " properti sitaan tersedia untuk dilelang.");
+    }
 
-    for (Property* prop : toAuction) {
-        auctionManager.startAuction(*prop, &debtor, true);
+    for (std::size_t i = startIndex; i < properties.size(); ++i) {
+        Property* prop = properties[i];
+        if (!prop || prop->getOwner() != nullptr || !bank.ownsProperty(prop)) {
+            continue;
+        }
+
+        auctionManager.startAuction(*prop, nullptr, true);
         if (engine.hasPendingContinuation()) {
-            engine.chainPendingContinuation([this, &debtor]() {
+            engine.chainPendingContinuation([this, properties, nextIndex = i + 1]() {
                 CommandResult resumed;
-                auctionAllBankProperties(debtor);
+                auctionBankruptAssets(properties, nextIndex);
                 return resumed;
             });
             return;
@@ -317,7 +333,7 @@ void BankruptcyManager::handleDebt(Player& debtor, int obligation,
                     std::to_string(obligation) + " ke " + creditorName + ".");
         } else {
             engine.pushEvent(GameEventType::MONEY, UiTone::SUCCESS,
-                "Pajak Lunas",
+                "Lunas ke Bank",
                 "M" + std::to_string(obligation) + " dibayarkan ke Bank.");
         }
         clearPendingDebt();
@@ -330,16 +346,25 @@ void BankruptcyManager::handleDebt(Player& debtor, int obligation,
             creditorName);
     logger.logBankruptcy(debtor.getUsername(), creditorName);
 
+    debtor.setStatus(PlayerStatus::BANKRUPT);
+    int debtorIndex = -1;
+    const auto& allPlayers = engine.getPlayers();
+    for (int i = 0; i < static_cast<int>(allPlayers.size()); ++i) {
+        if (allPlayers[i] == &debtor) {
+            debtorIndex = i;
+            break;
+        }
+    }
+    if (debtorIndex >= 0) {
+        engine.getTurnManager().removePlayer(debtorIndex);
+    }
+
     if (creditor) {
         transferAssetsToCreditor(debtor, *creditor);
     } else {
-        returnAssetsToBank(debtor);
-        auctionAllBankProperties(debtor);
+        const std::vector<Property*> seizedAssets = returnAssetsToBank(debtor);
+        auctionBankruptAssets(seizedAssets);
     }
-
-    debtor.setStatus(PlayerStatus::BANKRUPT);
-    engine.getTurnManager().removePlayer(
-        engine.getTurnManager().getCurrentPlayerIndex());
 
     engine.pushEvent(GameEventType::BANKRUPTCY, UiTone::ERROR,
         "Keluar Permainan",

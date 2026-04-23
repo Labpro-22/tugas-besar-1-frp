@@ -33,6 +33,31 @@ public:
         : GameException("Player " + username + " is bankrupt.") {}
 };
 
+class InvalidPlayerCountException : public GameException {
+public:
+    explicit InvalidPlayerCountException(int count)
+        : GameException("Jumlah pemain tidak valid: " + to_string(count) +
+                        ". Jumlah pemain harus 2 sampai 4.") {}
+
+    explicit InvalidPlayerCountException(const string& rawInput)
+        : GameException("Jumlah pemain tidak valid: '" + rawInput +
+                        "'. Jumlah pemain harus 2 sampai 4.") {}
+};
+
+class DuplicatePlayerNameException : public GameException {
+public:
+    explicit DuplicatePlayerNameException(const string& username)
+        : GameException("Nama pemain tidak valid: '" + username +
+                        "' sudah digunakan.") {}
+};
+
+class InvalidPlayerNameException : public GameException {
+public:
+    explicit InvalidPlayerNameException(const string& username)
+        : GameException("Nama pemain tidak valid: '" + username +
+                        "'. Nama pemain tidak boleh kosong.") {}
+};
+
 // not enough saldo buat transaksi
 class InsufficientFundsException : public GameException {
 public:

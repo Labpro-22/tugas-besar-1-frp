@@ -1,8 +1,36 @@
 #include "../../include/core/TurnManager.hpp"
 #include <algorithm>
-#include <cstdlib>
-#include <ctime>
+#include <chrono>
+#if defined(_WIN32)
+#include <process.h>
+#else
+#include <unistd.h>
+#endif
+#include <random>
 #include <stdexcept>
+
+namespace {
+unsigned int currentProcessEntropy() {
+#if defined(_WIN32)
+    return static_cast<unsigned int>(_getpid());
+#else
+    return static_cast<unsigned int>(getpid());
+#endif
+}
+
+std::mt19937 createShuffleRng() {
+    std::random_device rd;
+    const auto ticks = static_cast<unsigned long long>(
+        std::chrono::high_resolution_clock::now().time_since_epoch().count());
+    std::seed_seq seed{
+        rd(), rd(), rd(), rd(),
+        static_cast<unsigned int>(ticks),
+        static_cast<unsigned int>(ticks >> 32),
+        currentProcessEntropy()
+    };
+    return std::mt19937(seed);
+}
+}  // namespace
 
 TurnManager::TurnManager() : currentIndex(0), currentTurnNumber(1), extraTurnGranted(false){}
 
@@ -12,12 +40,8 @@ void TurnManager::initializeOrder(int nPlayers){
         turnOrder.push_back(i);
     }
 
-    // Pakai algoritma Fisher-Yates Shuffle
-    srand(static_cast<unsigned int>(time(nullptr)));
-    for(int i=nPlayers - 1; i > 0;--i){
-        int j = rand() % (i+1);
-        swap(turnOrder[i], turnOrder[j]);
-    }
+    static thread_local std::mt19937 rng = createShuffleRng();
+    std::shuffle(turnOrder.begin(), turnOrder.end(), rng);
     currentIndex = 0;
     currentTurnNumber = 1;
     extraTurnGranted = false;

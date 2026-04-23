@@ -26,5 +26,12 @@ public:
 class GetOutOfJailCard : public ActionCard {
 public:
     GetOutOfJailCard();
+    InventoryCardState getInventoryState() const override;
+    void apply(Player& player, GameEngine& game) override;
+};
+
+class GoToNearestFestivalCard : public ActionCard {
+public:
+    GoToNearestFestivalCard();
     void apply(Player& player, GameEngine& game) override;
 };

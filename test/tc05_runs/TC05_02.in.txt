@@ -1,0 +1,4 @@
+LOAD
+test/tc05_runs/TC05_02.txt
+ATUR_DADU 1 1
+KELUAR

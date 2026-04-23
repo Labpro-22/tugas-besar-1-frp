@@ -41,6 +41,18 @@ static std::string toUpper(std::string s) {
     return s;
 }
 
+static std::string trimCopy(std::string s) {
+    auto isSpace = [](unsigned char c) {
+        return std::isspace(c) != 0;
+    };
+
+    s.erase(s.begin(), std::find_if(s.begin(), s.end(),
+        [&](unsigned char c) { return !isSpace(c); }));
+    s.erase(std::find_if(s.rbegin(), s.rend(),
+        [&](unsigned char c) { return !isSpace(c); }).base(), s.end());
+    return s;
+}
+
 // ── Isi semua pending prompt yang ada di engine dengan jawaban dari user ──────
 void GameUI::resolvePrompts() {
     // Loop sampai tidak ada prompt lagi (satu prompt → satu loop)
@@ -157,11 +169,23 @@ void GameUI::bootstrapIfNeeded() {
             std::cout << "Jumlah pemain (2-4, default 4): ";
             std::string rawN;
             std::getline(std::cin, rawN);
+            rawN = trimCopy(rawN);
             if (!rawN.empty()) {
+                size_t parsedChars = 0;
+                int parsed = 0;
                 try {
-                    int parsed = std::stoi(rawN);
-                    if (parsed >= 2 && parsed <= 4) nPlayers = parsed;
-                } catch (...) {}
+                    parsed = std::stoi(rawN, &parsedChars);
+                } catch (...) {
+                    throw InvalidPlayerCountException(rawN);
+                }
+
+                if (parsedChars != rawN.size()) {
+                    throw InvalidPlayerCountException(rawN);
+                }
+                if (parsed < 2 || parsed > 4) {
+                    throw InvalidPlayerCountException(parsed);
+                }
+                nPlayers = parsed;
             }
 
             std::vector<std::string> names;
@@ -170,6 +194,7 @@ void GameUI::bootstrapIfNeeded() {
                 std::cout << "Nama pemain " << (i + 1) << ": ";
                 std::string name;
                 std::getline(std::cin, name);
+                name = trimCopy(name);
                 if (name.empty()) name = "P" + std::to_string(i + 1);
                 names.push_back(name);
             }
@@ -205,7 +230,7 @@ void GameUI::printStatusBar() const {
                 << " | Ketik BAYAR_DENDA atau LEMPAR_DADU";
         }
 
-        if (cur.countCards() > 0) {
+        if (cur.countCards() > 0 || cur.hasJailFreeCard()) {
             bar << " | Kartu: ";
             const auto& cards = cur.getHandCards();
             for (size_t i = 0; i < cards.size(); ++i) {
@@ -213,6 +238,12 @@ void GameUI::printStatusBar() const {
                 bar << (i + 1) << "." << cards[i]->getTypeName();
                 if (cards[i]->getValue() > 0)
                     bar << "(" << cards[i]->getValue() << ")";
+            }
+            if (cur.hasJailFreeCard()) {
+                if (!cards.empty()) {
+                    bar << ", ";
+                }
+                bar << "4.GetOutOfJailCard";
             }
         }
         bar << " ]";

@@ -50,10 +50,15 @@ bool isChanceGoToJailPayload(const std::string& payload) {
     return payload == "CHANCE_GO_TO_JAIL" || payload == "CHANCE_PENJARA";
 }
 
+bool isChanceFestivalPayload(const std::string& payload) {
+    return payload == "CHANCE_FESTIVAL";
+}
+
 bool isChanceTimedMovementPayload(const std::string& payload) {
     return isChanceNearestRailroadPayload(payload) ||
            isChanceMoveBackPayload(payload) ||
-           isChanceGoToJailPayload(payload);
+           isChanceGoToJailPayload(payload) ||
+           isChanceFestivalPayload(payload);
 }
 
 std::vector<int> buildFollowUpPathForTimedChance(const std::string& payload,
@@ -79,7 +84,7 @@ std::vector<int> buildFollowUpPathForTimedChance(const std::string& payload,
         return path;
     }
 
-    if (isChanceNearestRailroadPayload(payload)) {
+    if (isChanceNearestRailroadPayload(payload) || isChanceFestivalPayload(payload)) {
         int idx = fromIndex;
         for (int i = 0; i < boardSize; ++i) {
             idx = (idx + 1) % boardSize;
@@ -220,15 +225,8 @@ std::string resolveSkillCardTexture(const std::string& cardTypeName) {
     return "assets/images/ui/asset_card_template.png";
 }
 
-std::string buildSkillLabel(const SkillCard& card, int oneBasedIndex) {
-    std::ostringstream label;
-    label << oneBasedIndex << ". " << card.getTypeName();
-
-    if (card.getValue() > 0) {
-        label << " (Nilai " << card.getValue() << ")";
-    }
-
-    return label.str();
+std::string buildSkillLabel(const SkillCard& card) {
+    return card.getTypeName();
 }
 
 void appendPreTurnDebugLog(const std::string& line) {
@@ -656,9 +654,9 @@ void SfmlGuiManager::maybeShowPreTurnSkillPopup() {
     PopupPayload payload;
     payload.mode = PopupMode::SPECIAL;
     payload.headerTitle = "KARTU KEMAMPUAN";
-    payload.cardTitle = "PRA-GILIRAN";
+    payload.cardTitle = "PILIH KARTU KEMAMPUAN";
     payload.description =
-        "Klik kartu untuk mengirim command GUNAKAN_KEMAMPUAN sebelum lempar dadu.";
+        "Pilih kartu kemampuan yang ingin Anda gunakan atau lanjut ke lempar dadu maka kartu Anda akan tersimpan.";
 
     for (size_t i = 0; i < hand.size(); ++i) {
         const std::shared_ptr<SkillCard>& card = hand[i];
@@ -669,7 +667,7 @@ void SfmlGuiManager::maybeShowPreTurnSkillPopup() {
         const int engineCardIndex = static_cast<int>(i) + 1;
         payload.actionItems.push_back(PopupActionItem{
             std::string(kPreTurnSkillUsePrefix) + std::to_string(engineCardIndex),
-            buildSkillLabel(*card, engineCardIndex),
+            buildSkillLabel(*card),
             resolveSkillCardTexture(card->getTypeName()),
             true});
     }
@@ -952,7 +950,14 @@ std::string SfmlGuiManager::mapCardEventPayloadToImage(const std::string& payloa
     if (payload == "CHANCE_GO_TO_JAIL" || payload == "CHANCE_PENJARA") {
         return m_uiBasePath + "kesempatan_penjara.png";
     }
-    if (payload == "CHANCE_GET_OUT_OF_JAIL" || payload == "CHANCE_KELUAR") {
+    if (payload == "CHANCE_FESTIVAL") {
+        return m_uiBasePath + "kesempatan_festival.png";
+    }
+    // Canonical backend payload: CHANCE_BEBAS_PENJARA.
+    // Alias lama tetap diterima demi kompatibilitas data/event lama.
+    if (payload == "CHANCE_BEBAS_PENJARA" ||
+        payload == "CHANCE_GET_OUT_OF_JAIL" ||
+        payload == "CHANCE_KELUAR") {
         return m_uiBasePath + "kesempatan_keluar.png";
     }
     return "";

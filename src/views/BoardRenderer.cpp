@@ -242,10 +242,10 @@ std::string BoardRenderer::render(const Board& board, const std::vector<Player*>
     center[10] = std::string(36, ' ') + "----------------------------------" + std::string(28, ' ');
     center[11] = std::string(36, ' ') + "LEGENDA KEPEMILIKAN & STATUS      " + std::string(28, ' ');
     center[12] = std::string(36, ' ') + "P1-P4 : Properti milik Pemain 1-4 " + std::string(28, ' ');
-    center[13] = std::string(36, ' ') + "\xE2\x8C\x82     : Rumah Level 1             " + std::string(28, ' ');
-    center[14] = std::string(36, ' ') + "\xE2\x8C\x82\xE2\x8C\x82    : Rumah Level 2             " + std::string(28, ' ');
-    center[15] = std::string(36, ' ') + "\xE2\x8C\x82\xE2\x8C\x82\xE2\x8C\x82   : Rumah Level 3             " + std::string(28, ' ');
-    center[16] = std::string(36, ' ') + "\xF0\x9F\x8F\x9F    : Hotel (Maksimal)          " + std::string(28, ' ');
+    center[13] = std::string(36, ' ') + "Rumah Level 1             " + std::string(28, ' ');
+    center[14] = std::string(36, ' ') + "Rumah Level 2             " + std::string(28, ' ');
+    center[15] = std::string(36, ' ') + "Rumah Level 3             " + std::string(28, ' ');
+    center[16] = std::string(36, ' ') + "Hotel (Maksimal)          " + std::string(28, ' ');
     center[17] = std::string(36, ' ') + "(1)-(4): Bidak (IN=Tahanan, V=Mampir)" + std::string(25, ' ');
     center[18] = std::string(36, ' ') + "----------------------------------" + std::string(28, ' ');
     center[19] = std::string(36, ' ') + "KODE WARNA:                       " + std::string(28, ' ');

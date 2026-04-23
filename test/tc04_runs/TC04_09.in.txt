@@ -1,0 +1,4 @@
+LOAD
+test/tc04_runs/TC04_09.txt
+CETAK_AKTA XYZ
+KELUAR

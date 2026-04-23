@@ -90,7 +90,7 @@ void TaxTile::handlePPH(Player& player, GameEngine& engine) {
             engine.getBankruptcyManager().handleDebt(player, taxFlat, nullptr);
             return;
         }
-        int before = player.getMoney();
+        
         engine.getBank().receivePayment(player, taxFlat);
         engine.pushEvent(GameEventType::TAX, UiTone::SUCCESS, "Bayar PPH Flat",
             "Pajak sebesar M" + std::to_string(taxFlat) + " telah dibayar!\n"
@@ -123,7 +123,7 @@ void TaxTile::handlePPH(Player& player, GameEngine& engine) {
             engine.getBankruptcyManager().handleDebt(player, taxPct, nullptr);
             return;
         }
-        int before = player.getMoney();
+        
         engine.getBank().receivePayment(player, taxPct);
         engine.pushEvent(GameEventType::TAX, UiTone::SUCCESS,
             "Bayar PPH " + std::to_string(percentage) + "%",
@@ -153,7 +153,7 @@ void TaxTile::handlePBM(Player& player, GameEngine& engine) {
         return;
     }
 
-    int before = player.getMoney();
+   
     engine.getBank().receivePayment(player, flatAmount);
     engine.pushEvent(GameEventType::TAX, UiTone::SUCCESS, "Bayar PBM",
         "Pajak sebesar M" + std::to_string(flatAmount) + " telah dibayar!\n"

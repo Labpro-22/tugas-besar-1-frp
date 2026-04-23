@@ -1,0 +1,5 @@
+LOAD
+test/tc04_runs/TC04_08.txt
+CETAK_AKTA
+GRT
+KELUAR

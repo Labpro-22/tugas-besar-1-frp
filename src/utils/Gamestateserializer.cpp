@@ -19,6 +19,19 @@ bool isJailedStatus(const string& status) {
 bool isBlankLine(const string& line) {
     return trim(line).empty();
 }
+
+bool isJailFreeCardType(const string& type) {
+    return type == "GetOutOfJailCard";
+}
+
+bool isSkillCardType(const string& type) {
+    return type == "MoveCard" ||
+           type == "DiscountCard" ||
+           type == "ShieldCard" ||
+           type == "TeleportCard" ||
+           type == "LassoCard" ||
+           type == "DemolitionCard";
+}
 }
 
 //SavedCardState
@@ -353,10 +366,13 @@ SavedPlayerState Gamestateserializer::parsePlayer(istringstream& ss) const {
 
     int numCards = 0;
     ss >> numCards;
-    if (ss.fail() || numCards < 0 || numCards > 3) {
+    if (ss.fail() || numCards < 0 || numCards > 4) {
         throw SaveLoadException("Invalid number of cards for player " + username);
     }
     ss.ignore();
+
+    int skillCardCount = 0;
+    bool hasJailFreeCard = false;
 
     for (int i = 0; i < numCards; ++i) {
         string cardLine;
@@ -376,6 +392,42 @@ SavedPlayerState Gamestateserializer::parsePlayer(istringstream& ss) const {
 
         if (cs >> value)    card.setValue(value);
         if (cs >> duration) card.setDuration(duration);
+
+        if (isJailFreeCardType(type)) {
+            if (hasJailFreeCard) {
+                throw SaveLoadException(
+                    "Player " + username +
+                    " memiliki lebih dari satu GetOutOfJailCard.");
+            }
+            if (i != numCards - 1) {
+                throw SaveLoadException(
+                    "GetOutOfJailCard untuk player " + username +
+                    " harus berada di slot inventory terakhir.");
+            }
+            if (!value.empty() || !duration.empty()) {
+                throw SaveLoadException(
+                    "GetOutOfJailCard untuk player " + username +
+                    " tidak boleh menyimpan value/duration.");
+            }
+            hasJailFreeCard = true;
+        } else if (isSkillCardType(type)) {
+            if (hasJailFreeCard) {
+                throw SaveLoadException(
+                    "Skill card untuk player " + username +
+                    " tidak boleh berada setelah GetOutOfJailCard.");
+            }
+
+            ++skillCardCount;
+            if (skillCardCount > 3) {
+                throw SaveLoadException(
+                    "Player " + username +
+                    " memiliki lebih dari 3 skill card di inventory.");
+            }
+        } else {
+            throw SaveLoadException(
+                "Jenis kartu tidak valid untuk player " + username +
+                ": " + type);
+        }
 
         p.addCard(card);
     }

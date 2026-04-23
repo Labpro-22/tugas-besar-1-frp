@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <string>
 #include <vector>
 
@@ -26,8 +27,9 @@ private:
     int computeMaxLiquidation(const Player& player) const;
     void runLiquidationPanel(Player& player, int obligation);
     void transferAssetsToCreditor(Player& debtor, Player& creditor);
-    void returnAssetsToBank(Player& debtor);
-    void auctionAllBankProperties(Player& debtor);
+    std::vector<Property*> returnAssetsToBank(Player& debtor);
+    void auctionBankruptAssets(const std::vector<Property*>& properties,
+                               std::size_t startIndex = 0);
     void clearPendingDebt();
 
 public:

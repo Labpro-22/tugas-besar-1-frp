@@ -22,11 +22,14 @@ void CardManager::initializeDecks() {
     chanceDeck.addCard(std::make_shared<MoveBackCard>(3));
     chanceDeck.addCard(std::make_shared<GoToJailCard>());
     chanceDeck.addCard(std::make_shared<GetOutOfJailCard>());
+    chanceDeck.addCard(std::make_shared<GoToNearestFestivalCard>());
 
     // Community deck (tanpa salinan)
     communityDeck.addCard(std::make_shared<BirthdayCard>(100));
     communityDeck.addCard(std::make_shared<DoctorFeeCard>(700));
     communityDeck.addCard(std::make_shared<ElectionCard>(200));
+    communityDeck.addCard(std::make_shared<ArisanCard>(300));
+    communityDeck.addCard(std::make_shared<BegalCard>(200));
 
     // Skill deck (sesuai jumlah lembar di spesifikasi)
     for (int i = 0; i < 4; ++i) skillDeck.addCard(std::make_shared<MoveCard>(0));
@@ -64,13 +67,15 @@ void CardManager::drawChanceCard(Player& player, GameEngine& game) {
     std::shared_ptr<ActionCard> card = chanceDeck.draw();
     std::string cardCode;
     if (card && dynamic_cast<const GoToNearestRailroadCard*>(card.get()) != nullptr) {
-        cardCode = "CHANCE_NEAREST_RAILROAD";
+        cardCode = "CHANCE_STASIUN";
     } else if (card && dynamic_cast<const MoveBackCard*>(card.get()) != nullptr) {
-        cardCode = "CHANCE_MOVE_BACK";
+        cardCode = "CHANCE_MUNDUR";
     } else if (card && dynamic_cast<const GoToJailCard*>(card.get()) != nullptr) {
-        cardCode = "CHANCE_GO_TO_JAIL";
+        cardCode = "CHANCE_PENJARA";
     } else if (card && dynamic_cast<const GetOutOfJailCard*>(card.get()) != nullptr) {
-        cardCode = "CHANCE_GET_OUT_OF_JAIL";
+        cardCode = "CHANCE_BEBAS_PENJARA";
+    } else if (card && dynamic_cast<const GoToNearestFestivalCard*>(card.get()) != nullptr) {
+        cardCode = "CHANCE_FESTIVAL";
     }
 
     game.pushEvent(GameEventType::CARD, UiTone::INFO,
@@ -96,6 +101,10 @@ void CardManager::drawCommunityCard(Player& player, GameEngine& game) {
         cardCode = "CARD_DOCTOR";
     } else if (card && dynamic_cast<const ElectionCard*>(card.get()) != nullptr) {
         cardCode = "CARD_ELECTION";
+    } else if (card && dynamic_cast<const ArisanCard*>(card.get()) != nullptr) {
+        cardCode = "CARD_ARISAN";
+    } else if (card && dynamic_cast<const BegalCard*>(card.get()) != nullptr) {
+        cardCode = "CARD_BEGAL";
     }
 
     game.pushEvent(GameEventType::CARD, UiTone::INFO,
@@ -144,39 +153,29 @@ std::vector<std::string> CardManager::getPendingSkillDropOptions(const Player& p
         }
     }
 
-    auto it = pendingSkillDraw.find(player.getUsername());
-    if (it != pendingSkillDraw.end() && it->second) {
-        options.push_back(it->second->getTypeName());
-    }
-
     return options;
 }
 
-void CardManager::resolvePendingSkillDrop(Player& player, int discardIndexFromFour) {
+void CardManager::resolvePendingSkillDrop(Player& player, int discardSkillIndex) {
     auto it = pendingSkillDraw.find(player.getUsername());
     if (it == pendingSkillDraw.end() || !it->second) {
         throw GameException("Tidak ada pending kartu skill ke-4 untuk pemain ini.");
     }
 
-    if (discardIndexFromFour < 0 || discardIndexFromFour > 3) {
-        throw InvalidCardIndexException(discardIndexFromFour);
+    if (discardSkillIndex < 0 || discardSkillIndex >= 3) {
+        throw InvalidCardIndexException(discardSkillIndex);
     }
 
     std::shared_ptr<SkillCard> drawn = it->second;
+    const auto& hand = player.getHandCards();
+    if (discardSkillIndex >= static_cast<int>(hand.size())) {
+        throw InvalidCardIndexException(discardSkillIndex);
+    }
+
     pendingSkillDraw.erase(it);
 
-    if (discardIndexFromFour == 3) {
-        skillDeck.discard(drawn);
-        return;
-    }
-
-    const auto& hand = player.getHandCards();
-    if (discardIndexFromFour >= static_cast<int>(hand.size())) {
-        throw InvalidCardIndexException(discardIndexFromFour);
-    }
-
-    std::shared_ptr<SkillCard> discarded = hand[discardIndexFromFour];
-    player.removeCard(discardIndexFromFour);
+    std::shared_ptr<SkillCard> discarded = hand[discardSkillIndex];
+    player.removeCard(discardSkillIndex);
     skillDeck.discard(discarded);
     player.addCard(drawn);
 }

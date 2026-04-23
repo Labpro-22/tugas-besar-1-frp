@@ -1,0 +1,26 @@
+[2J[H[1m+------------------------------+
+¦     NIMONSPOLI CLI - FRP     ¦
++------------------------------+
+[0mKetik BANTUAN untuk daftar perintah.
+Ketik KELUAR untuk menutup program.
+
+Menu awal [NEW/LOAD] (default NEW): Nama file save (.txt, default file_save.txt): [32mState permainan berhasil dimuat dari file: test/tc03_runs/TC03_06.txt[0m
+
+[2m[ Giliran: Alice | Uang: M1000 | Turn: 1/15 | DIPENJARA (percobaan 1/4) | Ketik BAYAR_DENDA atau LEMPAR_DADU ][0m
+[1m> [0mDadu diatur secara manual.
+Hasil: 5 + 5 = 10
+[32mAlice mendapatkan double dan keluar dari penjara.[0m
+Memajukan Bidak Alice sebanyak 10 petak...
+Bidak mendarat di: Bebas Parkir.
+Kamu mendapatkan 1 kartu acak baru!
+Kartu yang didapat: ShieldCard.
+Sekarang giliran Bob.
+
+[2m[ Giliran: Bob | Uang: M1000 | Turn: 1/15 | Kartu: 1.ShieldCard ][0m
+[1m> [0mKamu mendapatkan 1 kartu acak baru!
+Kartu yang didapat: DiscountCard.
+Sekarang giliran Alice.
+
+[2m[ Giliran: Alice | Uang: M1000 | Turn: 2/15 | Kartu: 1.DiscountCard(10) ][0m
+[1m> [0mSampai jumpa!
+

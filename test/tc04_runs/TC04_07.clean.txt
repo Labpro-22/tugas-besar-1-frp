@@ -1,0 +1,32 @@
+[2J[H[1m+------------------------------+
+¦     NIMONSPOLI CLI - FRP     ¦
++------------------------------+
+[0mKetik BANTUAN untuk daftar perintah.
+Ketik KELUAR untuk menutup program.
+
+Menu awal [NEW/LOAD] (default NEW): Nama file save (.txt, default file_save.txt): [32mState permainan berhasil dimuat dari file: test/tc04_runs/TC04_07.txt[0m
+
+[2m[ Giliran: Alice | Uang: M1000 | Turn: 1/15 ][0m
+[1m> [0m+================================+
+|        AKTA KEPEMILIKAN        |
+|    [BT] JAKARTA (JKT)          |
++================================+
+| Harga Beli        : M350       |
+| Nilai Gadai       : M300       |
++--------------------------------+
+| Sewa (unimproved) : M35        |
+| Sewa (1 rumah)    : M175       |
+| Sewa (2 rumah)    : M500       |
+| Sewa (3 rumah)    : M1100      |
+| Sewa (4 rumah)    : M1300      |
+| Sewa (hotel)      : M1500      |
++--------------------------------+
+| Harga Rumah       : M200       |
+| Harga Hotel       : M200       |
++================================+
+| Status : BANK (belum dimiliki) |
++================================+
+
+[2m[ Giliran: Alice | Uang: M1000 | Turn: 1/15 ][0m
+[1m> [0mSampai jumpa!
+

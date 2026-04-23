@@ -485,6 +485,15 @@ void AssetPanel::updateData(const Player& currentPlayer, const std::string& syst
                                                  card->getDuration(),
                                                  key});
     }
+    if (currentPlayer.hasJailFreeCard()) {
+        const std::string jailFreeKey = "kesempatan_keluar";
+        ensureInventoryThumbnailLoaded(jailFreeKey);
+        m_inventoryItems.push_back(InventoryItem{"GetOutOfJailCard",
+                                                 "Kartu kesempatan khusus untuk bebas dari penjara.",
+                                                 0,
+                                                 0,
+                                                 jailFreeKey});
+    }
 
     m_systemLog = wrapTextByWord(systemLog, kLogWrapWidth);
     refreshPanelTitle();
