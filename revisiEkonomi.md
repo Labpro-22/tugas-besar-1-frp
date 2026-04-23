@@ -1,0 +1,17 @@
+Belum sepenuhnya sesuai spesifikasi. Fondasi ekonomi game kamu sudah cukup kuat, tapi masih ada beberapa mismatch aturan yang berdampak langsung ke gameplay: sewa monopoli street, aturan bangun rumah/hotel, status aset saat bangkrut, dan penentuan pemenang saat max turn.
+
+Temuan penting
+
+Penentuan pemenang saat max turn belum sesuai aturan game. Spesifikasi aturan permainan menyebut pemenang ditentukan oleh uang terbanyak, lalu jumlah properti, lalu jumlah kartu di Spesifikasi_Proyek_Game_Nimonspoli.md (line 477). Tetapi implementasi endgame di GameEngine.cpp (line 1357) memakai Player::operator> yang membandingkan total wealth di Player.cpp (line 47) dan Player.cpp (line 139). Jadi untuk mode max turn, hasil pemenangnya bisa beda dari spesifikasi.
+
+Akhir game max turn juga berpotensi terjadi terlalu cepat. Spesifikasi bilang game berakhir ketika semua pemain sudah mencapai batas giliran di Spesifikasi_Proyek_Game_Nimonspoli.md (line 477), tetapi GameEngine.cpp (line 1337) mengecek getCurrentTurn() >= maxTurn, sementara TurnManager.cpp (line 57) menaikkan nomor turn saat wrap ke pemain pertama. Artinya game bisa selesai di awal ronde terakhir, bukan setelah semua pemain menuntaskan ronde itu.
+
+Logika sewa monopoli Street bisa aktif terlalu dini. Di aturan, monopoli terjadi hanya jika pemain memiliki seluruh street dalam color group di Spesifikasi_Proyek_Game_Nimonspoli.md (line 325). Tetapi StreetProperty.cpp (line 28) menghitung total hanya dari street yang sedang dimiliki pemain mana pun. Kalau ada satu petak warna yang masih milik bank, owned == total tetap bisa true dan sewa dasar jadi 2x padahal belum monopoli penuh.
+
+Aturan bangun rumah belum sepenuhnya ditegakkan. Spesifikasi mewajibkan pemerataan rumah, selisih antar petak dalam satu group tidak boleh lebih dari 1 di Spesifikasi_Proyek_Game_Nimonspoli.md (line 356). Memang ada helper yang menghitung petak buildable secara merata di PropertyManager.cpp (line 453), tetapi jalur utama BANGUN tetap langsung memanggil PropertyManager.cpp (line 327) dari GameEngine.cpp (line 951) tanpa validasi pemerataan. Jadi secara logika, pemain masih bisa menumpuk rumah di satu petak lebih dulu.
+
+Aturan upgrade hotel juga belum aman. Kode di PropertyManager.cpp (line 336) mewajibkan semua petak di group masih HOUSE_4 sebelum satu petak boleh upgrade ke hotel. Masalahnya, setelah petak pertama jadi HOTEL, petak lain yang masih HOUSE_4 justru tidak lagi lolos syarat “semua harus HOUSE_4”. Jadi hotel kedua dan seterusnya dalam color group bisa ikut terkunci.
+
+Alur bangkrut ke pemain lain belum sesuai untuk properti yang sedang digadai. Spesifikasi menyebut properti mortgaged yang diambil alih kreditur tetap berstatus mortgaged di Spesifikasi_Proyek_Game_Nimonspoli.md (line 463). Tetapi saat transfer aset di BankruptcyManager.cpp (line 176), kode memanggil prop->setOwner(&creditor) di BankruptcyManager.cpp (line 197), dan Property.cpp (line 23) otomatis mengubah status jadi OWNED. Jadi status gadai hilang.
+
+Ada bug ekonomi tambahan di petak GO. Spesifikasi menyebut gaji diberikan saat berhenti tepat di GO atau melewatinya di Spesifikasi_Proyek_Game_Nimonspoli.md (line 297), artinya satu kejadian satu gaji. Tetapi GameEngine.cpp (line 1233) memberi gaji saat wrap melewati GO, lalu GoTile.cpp (line 12) memberi gaji lagi saat mendarat tepat di GO. Kalau langkahnya berakhir tepat di GO setelah wrap, pemain bisa dibayar dua kali.

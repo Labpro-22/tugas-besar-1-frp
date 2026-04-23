@@ -1,15 +1,8 @@
 # Makefile untuk proyek Nimonspoli
-# Cocok dengan struktur repo saat ini:
-# - src/main.cpp                    -> executable game (CLI)
-# - src/main_gui.cpp                -> executable game GUI
-# - src/core/test_engine.cpp        -> entry point test
-# - src/**/test_*.cpp lainnya       -> helper test
+# Default build/run: CLI dari src/main.cpp
+# GUI tetap tersedia lewat target terpisah.
 
 CXX := g++
-CXXFLAGS := -Wall -Wextra -std=c++17 -I include
-LDFLAGS :=
-SFML_LIBS := -lsfml-graphics -lsfml-window -lsfml-system
-
 .DEFAULT_GOAL := all
 
 SRC_DIR := src
@@ -17,6 +10,63 @@ OBJ_DIR := build
 BIN_DIR := bin
 DATA_DIR := data
 CONFIG_DIR := config
+SFML_DIR := C:/Users/juan oloando/SFML-3.0.0
+
+ifeq ($(OS),Windows_NT)
+SHELL := powershell.exe
+.SHELLFLAGS := -NoProfile -ExecutionPolicy Bypass -Command
+EXE_EXT := .exe
+
+define make-dir
+New-Item -ItemType Directory -Force -Path '$(1)' | Out-Null
+endef
+
+define remove-build-dir
+if (Test-Path '$(1)') { Get-ChildItem -Path '$(1)' -Recurse -File -Include '*.o','*.d' -ErrorAction SilentlyContinue | ForEach-Object { Remove-Item -LiteralPath $$_.FullName -Force -ErrorAction SilentlyContinue }; Get-ChildItem -Path '$(1)' -Recurse -Directory -ErrorAction SilentlyContinue | Sort-Object FullName -Descending | ForEach-Object { if (Test-Path $$_.FullName) { Remove-Item -LiteralPath $$_.FullName -Force -ErrorAction SilentlyContinue } }; if ((Test-Path '$(1)') -and (Get-ChildItem -Path '$(1)' -Recurse -File -Include '*.o','*.d' -ErrorAction SilentlyContinue)) { Write-Host 'Peringatan: sebagian artefak build masih dipakai proses lain.' } }
+endef
+
+define remove-bin-targets
+if (Test-Path '$(1)') { $$targets = @('game','game.exe','game_gui','game_gui.exe','tests','tests.exe'); foreach ($$name in $$targets) { $$path = Join-Path '$(1)' $$name; if (Test-Path $$path) { Remove-Item -Path $$path -Force -ErrorAction SilentlyContinue } } $$remaining = @(); foreach ($$name in $$targets) { $$path = Join-Path '$(1)' $$name; if (Test-Path $$path) { $$remaining += $$name } } if ($$remaining.Count -gt 0) { Write-Host ('Peringatan: file output belum terhapus (mungkin masih dipakai): ' + ($$remaining -join ', ')) } }
+endef
+
+define copy-sfml-dlls
+if (Test-Path '$(SFML_DIR)/bin') { Copy-Item -Path '$(SFML_DIR)/bin/*.dll' -Destination '$(1)' -Force -ErrorAction SilentlyContinue }
+endef
+
+RUN_GAME = & './$(TARGET)'
+RUN_GUI = & './$(GUI_TARGET)'
+RUN_TESTS = & './$(TEST_TARGET)'
+NOOP := Write-Host ''
+else
+EXE_EXT :=
+
+define make-dir
+mkdir -p '$(1)'
+endef
+
+define remove-build-dir
+rm -rf '$(1)'
+endef
+
+define remove-bin-targets
+rm -f '$(1)'/*.exe '$(1)'/game '$(1)'/game_gui '$(1)'/tests
+endef
+
+define copy-sfml-dlls
+true
+endef
+
+RUN_GAME = ./$(TARGET)
+RUN_GUI = ./$(GUI_TARGET)
+RUN_TESTS = ./$(TEST_TARGET)
+NOOP := true
+endif
+
+COMMON_CXXFLAGS := -Wall -Wextra -std=c++17 -I include
+CLI_CXXFLAGS := $(COMMON_CXXFLAGS)
+GUI_CXXFLAGS := $(COMMON_CXXFLAGS) -I"$(SFML_DIR)/include"
+CLI_LDFLAGS :=
+GUI_LDFLAGS := -L"$(SFML_DIR)/lib" -lsfml-graphics -lsfml-window -lsfml-system
 
 SRC_DIRS := \
 	$(SRC_DIR) \
@@ -28,7 +78,7 @@ SRC_DIRS := \
 
 ALL_SRCS := $(foreach dir,$(SRC_DIRS),$(wildcard $(dir)/*.cpp))
 TEST_SRCS := $(foreach dir,$(SRC_DIRS),$(wildcard $(dir)/test_*.cpp))
-GUI_SRCS := $(filter-out $(TEST_SRCS) $(SRC_DIR)/main.cpp,$(ALL_SRCS))
+GUI_SRCS := $(filter-out $(TEST_SRCS) $(SRC_DIR)/main.cpp $(SRC_DIR)/views/%.cpp,$(ALL_SRCS))
 GAME_SRCS := $(filter-out $(TEST_SRCS) $(SRC_DIR)/main_gui.cpp $(SRC_DIR)/viewsGUI/%.cpp,$(ALL_SRCS))
 
 TEST_MAIN := $(SRC_DIR)/core/test_engine.cpp
@@ -50,51 +100,11 @@ DEPS := \
 	$(TEST_MAIN_OBJ:.o=.d) \
 	$(TEST_SUPPORT_OBJS:.o=.d)
 
-ifeq ($(OS),Windows_NT)
-SHELL := powershell.exe
-.SHELLFLAGS := -NoProfile -ExecutionPolicy Bypass -Command
-EXE_EXT := .exe
+.PHONY: all cli gui directories run run-cli run-gui test clean makeclean rebuild info
 
-define make-dir
-New-Item -ItemType Directory -Force -Path '$(1)' | Out-Null
-endef
+all: cli
 
-define remove-build-dir
-if (Test-Path '$(1)') { Remove-Item -Path '$(1)' -Recurse -Force -ErrorAction SilentlyContinue; if (Test-Path '$(1)') { Write-Error 'Gagal menghapus folder $(1). Tutup program yang masih memakai file hasil build lalu coba lagi.'; exit 1 } }
-endef
-
-define remove-exes
-if (Test-Path '$(1)') { Get-ChildItem -Path '$(1)' -Filter '*.exe' -File -ErrorAction SilentlyContinue | ForEach-Object { Remove-Item -Path $$_.FullName -Force -ErrorAction SilentlyContinue }; $$remaining = Get-ChildItem -Path '$(1)' -Filter '*.exe' -File -ErrorAction SilentlyContinue; if ($$remaining) { Write-Host ('Peringatan: exe tidak terhapus (mungkin masih berjalan): ' + ($$remaining.Name -join ', ')) } }
-endef
-
-RUN_GAME := & './$(TARGET)'
-RUN_GUI := & './$(GUI_TARGET)'
-RUN_TESTS := & './$(TEST_TARGET)'
-NOOP := Write-Host ''
-else
-EXE_EXT :=
-
-define make-dir
-mkdir -p '$(1)'
-endef
-
-define remove-build-dir
-rm -rf '$(1)'
-endef
-
-define remove-exes
-rm -f '$(1)'/*.exe '$(1)'/game '$(1)'/game_gui '$(1)'/tests
-endef
-
-RUN_GAME := ./$(TARGET)
-RUN_GUI := ./$(GUI_TARGET)
-RUN_TESTS := ./$(TEST_TARGET)
-NOOP := true
-endif
-
-.PHONY: all gui directories run run-gui test clean makeclean rebuild info
-
-all: directories $(TARGET)
+cli: directories $(TARGET)
 
 gui: directories $(GUI_TARGET)
 
@@ -106,24 +116,35 @@ directories:
 
 $(TARGET): $(GAME_OBJS)
 	@$(call make-dir,$(BIN_DIR))
-	$(CXX) $(CXXFLAGS) $(GAME_OBJS) $(LDFLAGS) -o $@
+	$(CXX) $(CLI_CXXFLAGS) $(GAME_OBJS) $(CLI_LDFLAGS) -o $@
 
 $(GUI_TARGET): $(GUI_OBJS)
 	@$(call make-dir,$(BIN_DIR))
-	$(CXX) $(CXXFLAGS) $(GUI_OBJS) $(LDFLAGS) $(SFML_LIBS) -o $@
+	$(CXX) $(GUI_CXXFLAGS) $(GUI_OBJS) $(GUI_LDFLAGS) -o $@
+	@$(call copy-sfml-dlls,$(BIN_DIR))
 
 $(TEST_TARGET): $(COMMON_GAME_OBJS) $(TEST_MAIN_OBJ) $(TEST_SUPPORT_OBJS)
 	@$(call make-dir,$(BIN_DIR))
-	$(CXX) $(CXXFLAGS) $(COMMON_GAME_OBJS) $(TEST_MAIN_OBJ) $(TEST_SUPPORT_OBJS) $(LDFLAGS) -o $@
+	$(CXX) $(CLI_CXXFLAGS) $(COMMON_GAME_OBJS) $(TEST_MAIN_OBJ) $(TEST_SUPPORT_OBJS) $(CLI_LDFLAGS) -o $@
+
+$(OBJ_DIR)/viewsGUI/%.o: $(SRC_DIR)/viewsGUI/%.cpp
+	@$(call make-dir,$(dir $@))
+	$(CXX) $(GUI_CXXFLAGS) -MMD -MP -c $< -o $@
+
+$(OBJ_DIR)/main_gui.o: $(SRC_DIR)/main_gui.cpp
+	@$(call make-dir,$(dir $@))
+	$(CXX) $(GUI_CXXFLAGS) -MMD -MP -c $< -o $@
 
 $(OBJ_DIR)/%.o: $(SRC_DIR)/%.cpp
 	@$(call make-dir,$(dir $@))
-	$(CXX) $(CXXFLAGS) -MMD -MP -c $< -o $@
+	$(CXX) $(CLI_CXXFLAGS) -MMD -MP -c $< -o $@
 
-run: $(TARGET)
+run: cli
 	$(RUN_GAME)
 
-run-gui: $(GUI_TARGET)
+run-cli: run
+
+run-gui: gui
 	$(RUN_GUI)
 
 test: $(TEST_TARGET)
@@ -131,14 +152,14 @@ test: $(TEST_TARGET)
 
 clean:
 	@$(call remove-build-dir,$(OBJ_DIR))
-	@$(call remove-exes,$(BIN_DIR))
+	@$(call remove-bin-targets,$(BIN_DIR))
 
 makeclean: clean
 
 rebuild: clean all
 
 info:
-	$(info Game sources:)
+	$(info CLI sources:)
 	$(foreach src,$(GAME_SRCS),$(info $(src)))
 	$(info GUI sources:)
 	$(foreach src,$(GUI_SRCS),$(info $(src)))

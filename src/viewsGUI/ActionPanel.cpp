@@ -14,7 +14,7 @@ ActionPanel::ActionPanel(sf::Vector2f position, sf::Vector2f size, const sf::Fon
 }
 
 void ActionPanel::initLayout() {
-    m_statusBox.setPosition(m_position.x + 20.0f, m_position.y + 20.0f);
+    m_statusBox.setPosition({m_position.x + 20.0f, m_position.y + 20.0f});
     m_statusBox.setSize({m_size.x - 40.0f, 110.0f});
     m_statusBox.setFillColor(Theme::PanelSection);
     m_statusBox.setOutlineThickness(2.0f);
@@ -24,19 +24,19 @@ void ActionPanel::initLayout() {
     m_titleText.setString("GILIRAN SAAT INI");
     m_titleText.setCharacterSize(14);
     m_titleText.setFillColor(sf::Color(200, 200, 200));
-    m_titleText.setPosition(m_position.x + 30.0f, m_position.y + 28.0f);
+    m_titleText.setPosition({m_position.x + 30.0f, m_position.y + 28.0f});
 
     m_playerInfoText.setFont(m_font);
     m_playerInfoText.setString("Pemain -");
     m_playerInfoText.setCharacterSize(22);
     m_playerInfoText.setFillColor(sf::Color::White);
-    m_playerInfoText.setPosition(m_position.x + 30.0f, m_position.y + 52.0f);
+    m_playerInfoText.setPosition({m_position.x + 30.0f, m_position.y + 52.0f});
 
     m_turnInfoText.setFont(m_font);
     m_turnInfoText.setString("Turn 0/0");
     m_turnInfoText.setCharacterSize(14);
     m_turnInfoText.setFillColor(sf::Color(220, 220, 220));
-    m_turnInfoText.setPosition(m_position.x + 30.0f, m_position.y + 84.0f);
+    m_turnInfoText.setPosition({m_position.x + 30.0f, m_position.y + 84.0f});
 
     const float startY = m_position.y + 150.0f;
     const float padding = 20.0f;
@@ -81,7 +81,7 @@ void ActionPanel::initLayout() {
 
     m_buttons = {m_btnRollDice, m_btnBuild, m_btnMortgage, m_btnUseCard, m_btnSave, m_btnLoad};
 
-    m_logBox.setPosition(m_position.x + 20.0f, m_position.y + 360.0f);
+    m_logBox.setPosition({m_position.x + 20.0f, m_position.y + 360.0f});
     m_logBox.setSize({m_size.x - 40.0f, m_size.y - 380.0f});
     m_logBox.setFillColor(sf::Color(30, 34, 38));
     m_logBox.setOutlineThickness(2.0f);
@@ -90,7 +90,7 @@ void ActionPanel::initLayout() {
     m_logText.setFont(m_font);
     m_logText.setCharacterSize(14);
     m_logText.setFillColor(sf::Color(225, 225, 225));
-    m_logText.setPosition(m_logBox.getPosition().x + 12.0f, m_logBox.getPosition().y + 12.0f);
+    m_logText.setPosition({m_logBox.getPosition().x + 12.0f, m_logBox.getPosition().y + 12.0f});
     m_logText.setString("Siap memulai game.");
 
     m_btnBuild->setEnabled(false);
