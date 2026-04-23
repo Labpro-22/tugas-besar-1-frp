@@ -21,7 +21,6 @@ private:
     void displayWelcome() const;
     void bootstrapIfNeeded();
     void resolvePrompts();
-    void handlePendingSkillDrop();
     void printStatusBar() const;
 
     // Baca satu baris input dari terminal

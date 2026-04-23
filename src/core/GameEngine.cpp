@@ -28,20 +28,20 @@
 #include "../../include/utils/Gamestateserializer.hpp"
 #include "../../include/utils/Saveloadmanager.hpp"
 
-// ─── Header dari Orang 1 & 2 (uncomment saat sudah tersedia) ─────────────────
-// #include "../../include/models/Player.hpp"
-// #include "../../include/models/Board.hpp"
-// #include "../../include/core/Command.hpp"
 
-// ─── Header dari Orang 4 & 5 (uncomment saat sudah tersedia) ─────────────────
-// #include "../../include/models/Bank.hpp"
-// #include "../../include/core/AuctionManager.hpp"
-// #include "../../include/core/BankruptcyManager.hpp"
-// #include "../../include/core/PropertyManager.hpp"
-// #include "../../include/core/CardManager.hpp"
-// #include "../../include/core/EffectManager.hpp"
-// #include "../../include/core/TransactionLogger.hpp"
-// #include "../../include/core/SaveLoadManager.hpp"
+#include "../../include/models/Player.hpp"
+#include "../../include/models/Board.hpp"
+#include "../../include/core/Command.hpp"
+
+
+#include "../../include/models/Bank.hpp"
+#include "../../include/core/AuctionManager.hpp"
+#include "../../include/core/BankruptcyManager.hpp"
+#include "../../include/core/PropertyManager.hpp"
+#include "../../include/core/CardManager.hpp"
+#include "../../include/core/EffectManager.hpp"
+#include "../../include/core/TransactionLogger.hpp"
+#include "../../include/utils/Saveloadmanager.hpp"
 
 #include <algorithm>
 #include <cctype>
@@ -50,6 +50,8 @@
 #include <stdexcept>
 #include <unordered_map>
 #include <unordered_set>
+
+using namespace std;
 
 namespace {
 std::string normalizeColorGroup(const std::string& raw) {
@@ -148,23 +150,24 @@ string toOwnershipStatusString(OwnershipStatus status) {
 GameEngine::GameEngine()
     : board(nullptr),
       gameOver(false),
-    gameStarted(false),
-    turnActionTaken(false),
-    diceRolledThisTurn(false),
-    extraRollAllowedThisTurn(false),
+      gameStarted(false),
+      turnActionTaken(false),
+      diceRolledThisTurn(false),
+      extraRollAllowedThisTurn(false),
       gameOverReason_(GameOverReason::NONE),
       maxTurn(0),
-            initialBalance(1000),
+      initialBalance(1000),
       goSalary(200),
       jailFine(50),
       dice(6),
-      bank(nullptr),
-      auctionManager(nullptr),
-      bankruptcyManager(nullptr),
-      propertyManager(nullptr),
-      cardManager(nullptr),
-      effectManager(nullptr),
-      logger(nullptr) {}
+      bank(std::make_unique<Bank>()),
+      logger(std::make_unique<TransactionLogger>()),
+      cardManager(std::make_unique<CardManager>()),
+      effectManager(std::make_unique<EffectManager>()),
+      propertyManager(std::make_unique<PropertyManager>(*this, *bank, *logger)),
+      auctionManager(std::make_unique<AuctionManager>(*this, *bank, *logger)),
+      bankruptcyManager(std::make_unique<BankruptcyManager>(
+          *this, *bank, *logger, *propertyManager, *auctionManager)) {}
 
 GameEngine::~GameEngine() {
     delete board;
@@ -179,14 +182,6 @@ GameEngine::~GameEngine() {
 // ─────────────────────────────────────────────────────────────────────────────
 // Dependency injection
 // ─────────────────────────────────────────────────────────────────────────────
-
-void GameEngine::setBank(Bank* b)                          { bank               = b;  }
-void GameEngine::setAuctionManager(AuctionManager* am)     { auctionManager     = am; }
-void GameEngine::setBankruptcyManager(BankruptcyManager* bm){ bankruptcyManager = bm; }
-void GameEngine::setPropertyManager(PropertyManager* pm)   { propertyManager    = pm; }
-void GameEngine::setCardManager(CardManager* cm)           { cardManager        = cm; }
-void GameEngine::setEffectManager(EffectManager* em)       { effectManager      = em; }
-void GameEngine::setTransactionLogger(TransactionLogger* tl){ logger            = tl; }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Lifecycle
@@ -429,8 +424,7 @@ CommandResult GameEngine::processCommand(const Command& cmd) {
                             " berhasil melunasi denda penjara M" +
                             std::to_string(jailFine) +
                             " dan keluar dari penjara.");
-                    continueTurnAfterDiceResolution(
-                        flowResult, current, total, rolledDouble);
+                    continueTurnAfterDiceResolution(flowResult, current, total, rolledDouble);
                     return;
                 }
 
@@ -448,8 +442,7 @@ CommandResult GameEngine::processCommand(const Command& cmd) {
                     current.getUsername() +
                         " wajib membayar denda M" + std::to_string(jailFine) +
                         " pada percobaan ke-4.");
-                continueTurnAfterDiceResolution(
-                    flowResult, current, total, rolledDouble);
+                continueTurnAfterDiceResolution(flowResult, current, total, rolledDouble);
                 return;
             } else {
                 if (!rolledDouble) {
@@ -477,7 +470,7 @@ CommandResult GameEngine::processCommand(const Command& cmd) {
                         " mendapatkan double dan keluar dari penjara.");
 
                 flowResult.append(moveCurrentPlayer(total));
-                if (flowResult.prompt.has_value() || hasPendingContinuation()) {
+                if (!flowResult.prompts.empty() || hasPendingContinuation()) {
                     chainPendingContinuation([this]() {
                         CommandResult resumed;
                         Player& resumedPlayer = getCurrentPlayer();
@@ -503,7 +496,7 @@ CommandResult GameEngine::processCommand(const Command& cmd) {
             GameEventType::SYSTEM,
             UiTone::INFO,
             "Daftar Perintah",
-            "LEMPAR_DADU | ATUR_DADU X Y | CETAK_PAPAN | CETAK_AKTA [KODE] | "
+            "LEMPAR_DADU | PILIH_BUANG_KARTU <index_0_3> | ATUR_DADU X Y | CETAK_PAPAN | CETAK_AKTA [KODE] | "
             "CETAK_PROPERTI | GADAI KODE | TEBUS KODE | BANGUN KODE | "
             "GUNAKAN_KEMAMPUAN IDX [TARGET] | BAYAR_DENDA (saat di penjara) | "
             "CETAK_LOG [N] | SIMPAN [FILE] | AKHIRI_GILIRAN | KELUAR"
@@ -530,6 +523,9 @@ CommandResult GameEngine::processCommand(const Command& cmd) {
         flushEvents(result);
         return result;
     }
+
+    case CommandType::RESOLVE_SKILL_DROP:
+        return handlePendingSkillDropPrompt();
 
     case CommandType::SET_DICE: {
         result.commandName = "ATUR_DADU";
@@ -1152,7 +1148,6 @@ CommandResult GameEngine::executeTurn() {
     if (cardManager && !next.isBankrupt()) {
         std::shared_ptr<SkillCard> drawn = cardManager->drawSkillCard(next);
         if (cardManager->hasPendingSkillDrop(next)) {
-            // Drop prompting is handled elsewhere, but first we print they got a card.
             result.addEvent(
                 GameEventType::CARD,
                 UiTone::INFO,
@@ -1160,15 +1155,39 @@ CommandResult GameEngine::executeTurn() {
                 "Kamu mendapatkan 1 kartu acak baru!\n"
                 "Kartu yang didapat: " + drawn->getTypeName() + "."
             );
-        } else {
-            result.addEvent(
-                GameEventType::CARD,
-                UiTone::INFO,
-                "Kartu Kemampuan",
-                "Kamu mendapatkan 1 kartu acak baru!\n"
-                "Kartu yang didapat: " + drawn->getTypeName() + "."
-            );
+
+            const std::string promptKey = "skill_drop_" + next.getUsername();
+            std::vector<PromptOption> options;
+            const std::vector<std::string> labels =
+                cardManager->getPendingSkillDropOptions(next);
+            options.reserve(labels.size());
+            for (size_t i = 0; i < labels.size(); ++i) {
+                options.push_back(PromptOption{
+                    std::to_string(i),
+                    std::to_string(i + 1) + ". " + labels[i]});
+            }
+
+            PromptRequest prompt;
+            prompt.id = promptKey;
+            prompt.title = "KARTU KEMAMPUAN";
+            prompt.message = "Tangan penuh (4 kartu). Pilih 1 kartu yang akan dibuang.";
+            prompt.options = std::move(options);
+            pushPrompt(prompt);
+            setPendingContinuation([this]() {
+                return handlePendingSkillDropPrompt();
+            });
+
+            flushEvents(result);
+            return result;
         }
+
+        result.addEvent(
+            GameEventType::CARD,
+            UiTone::INFO,
+            "Kartu Kemampuan",
+            "Kamu mendapatkan 1 kartu acak baru!\n"
+            "Kartu yang didapat: " + drawn->getTypeName() + "."
+        );
     }
 
     if (logger) {
@@ -1263,7 +1282,7 @@ void GameEngine::continueTurnAfterDiceResolution(CommandResult& flowResult,
     }
 
     flowResult.append(moveCurrentPlayer(totalSteps));
-    if (flowResult.prompt.has_value() || hasPendingContinuation()) {
+    if (!flowResult.prompts.empty() || hasPendingContinuation()) {
         chainPendingContinuation([this, rolledDouble]() {
             CommandResult resumed;
             Player& resumedPlayer = getCurrentPlayer();
@@ -1951,6 +1970,96 @@ void GameEngine::resetTurnActionFlags() {
     extraRollAllowedThisTurn = false;
 }
 
+CommandResult GameEngine::handlePendingSkillDropPrompt() {
+    CommandResult result;
+    result.commandName = "PILIH_BUANG_KARTU";
+
+    if (!cardManager) {
+        throw GameException("CardManager belum diinisialisasi.");
+    }
+
+    Player& current = getCurrentPlayer();
+    if (!cardManager->hasPendingSkillDrop(current)) {
+        result.addEvent(
+            GameEventType::CARD,
+            UiTone::INFO,
+            "Kartu Kemampuan",
+            "Tidak ada kartu skill yang perlu dibuang.");
+        flushEvents(result);
+        return result;
+    }
+
+    const std::string promptKey = "skill_drop_" + current.getUsername();
+    const std::vector<std::string> labels =
+        cardManager->getPendingSkillDropOptions(current);
+
+    auto requeuePrompt = [&]() {
+        std::vector<PromptOption> options;
+        options.reserve(labels.size());
+        for (size_t i = 0; i < labels.size(); ++i) {
+            options.push_back(PromptOption{
+                std::to_string(i),
+                std::to_string(i + 1) + ". " + labels[i]});
+        }
+
+        PromptRequest prompt;
+        prompt.id = promptKey;
+        prompt.title = "KARTU KEMAMPUAN";
+        prompt.message = "Pilih 1 kartu yang akan dibuang.";
+        prompt.options = std::move(options);
+        pushPrompt(prompt);
+        setPendingContinuation([this]() {
+            return handlePendingSkillDropPrompt();
+        });
+    };
+
+    if (!hasPromptAnswer(promptKey)) {
+        requeuePrompt();
+        flushEvents(result);
+        return result;
+    }
+
+    const std::string rawAnswer = consumePromptAnswer(promptKey);
+    int discardIndex = -1;
+    try {
+        discardIndex = std::stoi(rawAnswer);
+    } catch (const std::exception&) {
+        discardIndex = -1;
+    }
+
+    if (discardIndex < 0 || discardIndex >= static_cast<int>(labels.size())) {
+        result.addEvent(
+            GameEventType::CARD,
+            UiTone::WARNING,
+            "Input Tidak Valid",
+            "Pilih nomor kartu yang tersedia.");
+        requeuePrompt();
+        flushEvents(result);
+        return result;
+    }
+
+    cardManager->resolvePendingSkillDrop(current, discardIndex);
+    result.addEvent(
+        GameEventType::CARD,
+        UiTone::SUCCESS,
+        "Kartu Kemampuan",
+        current.getUsername() + " membuang kartu: " +
+            labels[static_cast<size_t>(discardIndex)] + ".");
+
+    if (logger) {
+        logger->setCurrentTurn(turnManager.getTurnNumber());
+    }
+
+    result.addEvent(
+        GameEventType::TURN,
+        UiTone::INFO,
+        "Giliran Berikutnya",
+        "Sekarang giliran " + current.getUsername() + ".");
+
+    flushEvents(result);
+    return result;
+}
+
 // ── Event buffer API ──────────────────────────────────────────────────────────
 
 void GameEngine::pushEvent(GameEventType type, UiTone tone,
@@ -1958,14 +2067,28 @@ void GameEngine::pushEvent(GameEventType type, UiTone tone,
     pendingEvents_.push_back(GameEvent{type, tone, title, msg});
 }
 
+void GameEngine::pushPrompt(const PromptRequest& prompt) {
+    pendingPrompts_.push_back(prompt);
+}
+
 void GameEngine::pushPrompt(const std::string& key, const std::string& msg,
                              const std::vector<std::string>& options, bool required) {
+    pushPrompt(key, msg, options, required, "");
+}
+
+void GameEngine::pushPrompt(const std::string& key, const std::string& msg,
+                             const std::vector<std::string>& options, bool required,
+                             const std::string& title) {
     PromptRequest pr;
-    pr.key     = key;
+    pr.id      = key;
+    pr.title   = title;
     pr.message = msg;
-    pr.options = options;
+    pr.options.reserve(options.size());
+    for (const std::string& option : options) {
+        pr.options.push_back(PromptOption{option, option});
+    }
     pr.required = required;
-    pendingPrompts_.push_back(pr);
+    pushPrompt(pr);
 }
 
 void GameEngine::flushEvents(CommandResult& result) {
@@ -1974,11 +2097,9 @@ void GameEngine::flushEvents(CommandResult& result) {
     }
     pendingEvents_.clear();
 
-    // Hanya simpan prompt terakhir ke result (UI hanya handle satu prompt sekaligus)
-    if (!pendingPrompts_.empty()) {
-        result.prompt = pendingPrompts_.back();
-        pendingPrompts_.clear();
-    }
+    result.prompts.insert(
+        result.prompts.end(), pendingPrompts_.begin(), pendingPrompts_.end());
+    pendingPrompts_.clear();
 }
 
 void GameEngine::setPendingContinuation(

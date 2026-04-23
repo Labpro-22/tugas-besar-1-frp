@@ -195,7 +195,7 @@ vector<PropertyDef> ConfigLoader::loadProperties(const string& path) const {
                         path + " line " + to_string(lineNum) +
                         ": RAILROAD expects 6 tokens");
                 }
-                def.setPurchasePrice(0); 
+                def.setPurchasePrice(stoi(tokens[5]));
                 def.setMortgageValue(stoi(tokens[5]));
                 def.setHouseCost(0);
                 def.setHotelCost(0);
@@ -206,7 +206,7 @@ vector<PropertyDef> ConfigLoader::loadProperties(const string& path) const {
                         path + " line " + to_string(lineNum) +
                         ": UTILITY expects 6 tokens");
                 }
-                def.setPurchasePrice(0); 
+                def.setPurchasePrice(stoi(tokens[5]));
                 def.setMortgageValue(stoi(tokens[5]));
                 def.setHouseCost(0);
                 def.setHotelCost(0);

@@ -1,7 +1,7 @@
 #include "../../include/views/GameUI.hpp"
 
-#include "../../include/core/CardManager.hpp"
 #include "../../include/models/Player.hpp"
+#include "../../include/models/SkillCard.hpp"
 #include "../../include/utils/GameException.hpp"
 #include "../../include/views/AnsiTheme.hpp"
 
@@ -65,20 +65,42 @@ void GameUI::resolvePrompts() {
 
 // ── Handle satu PromptRequest: cetak ke terminal, baca jawaban ────────────────
 void GameUI::handleSinglePrompt(const PromptRequest& prompt) {
+    if (!prompt.title.empty()) {
+        std::cout << AnsiTheme::apply(AnsiTheme::bold(), "\n[ " + prompt.title + " ]\n");
+    }
     std::cout << AnsiTheme::apply(AnsiTheme::warning(),
         "\n[?] " + prompt.message + "\n");
     if (!prompt.options.empty()) {
         std::cout << AnsiTheme::apply(AnsiTheme::dim(), "    Opsi: ");
         for (size_t i = 0; i < prompt.options.size(); ++i) {
             if (i > 0) std::cout << " / ";
-            std::cout << prompt.options[i];
+            std::cout << prompt.options[i].label;
         }
         std::cout << "\n";
     }
     std::cout << AnsiTheme::apply(AnsiTheme::bold(), "    >> ");
     std::string answer;
     std::getline(std::cin, answer);
-    engine.setPromptAnswer(prompt.key, answer);
+
+    if (!prompt.options.empty()) {
+        try {
+            const int selected = std::stoi(answer);
+            if (selected >= 1 && selected <= static_cast<int>(prompt.options.size())) {
+                answer = prompt.options[static_cast<size_t>(selected - 1)].key;
+            }
+        } catch (const std::exception&) {
+            // Keep raw answer for free-form prompts.
+        }
+
+        for (const PromptOption& option : prompt.options) {
+            if (answer == option.label) {
+                answer = option.key;
+                break;
+            }
+        }
+    }
+
+    engine.setPromptAnswer(prompt.id, answer);
 }
 
 // ── Eksekusi command + resolve semua prompt yang muncul secara rekursif ───────
@@ -93,14 +115,15 @@ CommandResult GameUI::executeWithPrompts(const Command& cmd) {
     for (int iteration = 0; iteration < 64; ++iteration) {
         CommandResult result = engine.processCommand(cmd);
 
-        if (!result.prompt.has_value()) {
+        if (result.prompts.empty()) {
             // Tidak ada prompt → selesai
             return result;
         }
 
         // Ada prompt → tampilkan ke user, isi jawaban
-        while (result.prompt.has_value()) {
-            const PromptRequest& prompt = result.prompt.value();
+        while (!result.prompts.empty()) {
+            const PromptRequest prompt = result.prompts.front();
+            result.prompts.erase(result.prompts.begin());
             std::cout << formatter.format(result);
             handleSinglePrompt(prompt);
 
@@ -111,7 +134,7 @@ CommandResult GameUI::executeWithPrompts(const Command& cmd) {
             result = engine.resumePendingAction();
         }
 
-        if (!result.prompt.has_value()) {
+        if (result.prompts.empty()) {
             return result;
         }
     }
@@ -190,41 +213,6 @@ void GameUI::bootstrapIfNeeded() {
     }
 }
 
-// ── Handler kartu ke-4 (drop interaktif) ─────────────────────────────────────
-void GameUI::handlePendingSkillDrop() {
-    if (engine.isGameOver() || engine.getPlayers().empty()) return;
-
-    try {
-        Player& current = engine.getCurrentPlayer();
-        CardManager& cardManager = engine.getCardManager();
-        if (!cardManager.hasPendingSkillDrop(current)) return;
-
-        std::cout << "\nPemain " << current.getUsername() << " mendapatkan kartu ke-4! "
-                  << "Wajib membuang 1 kartu kemampuan.\n";
-
-        const auto options = cardManager.getPendingSkillDropOptions(current);
-        std::cout << "Pilih kartu yang akan dibuang:\n";
-        for (size_t i = 0; i < options.size(); ++i)
-            std::cout << (i + 1) << ". " << options[i] << "\n";
-
-        int choice = 0;
-        while (choice < 1 || choice > static_cast<int>(options.size())) {
-            std::cout << "Masukkan nomor kartu yang akan dibuang (1-"
-                      << options.size() << "): ";
-            std::string input;
-            std::getline(std::cin, input);
-            try { choice = std::stoi(input); } catch (...) { choice = 0; }
-        }
-
-        cardManager.resolvePendingSkillDrop(current, choice - 1);
-        std::cout << "Kartu berhasil dibuang! Kamu memiliki 3 kartu di tangan.\n";
-
-    } catch (const GameException& e) {
-        std::cout << AnsiTheme::apply(AnsiTheme::error(), "[ERROR] ")
-                  << e.what() << "\n";
-    } catch (...) {}
-}
-
 // ── Status bar ────────────────────────────────────────────────────────────────
 void GameUI::printStatusBar() const {
     if (engine.isGameOver() || engine.getPlayers().empty()) return;
@@ -273,9 +261,6 @@ void GameUI::run() {
             std::cout << AnsiTheme::apply(AnsiTheme::bold(),
                 "\nPermainan selesai. Ketik KELUAR untuk menutup.\n");
         }
-
-        // Handle drop kartu ke-4 jika ada
-        handlePendingSkillDrop();
 
         // Status bar
         printStatusBar();

@@ -9,6 +9,7 @@ enum class CommandType {
     EXIT,
     START_GAME,
     ROLL_DICE,
+    RESOLVE_SKILL_DROP,
     SET_DICE,
     PRINT_BOARD,
     PRINT_DEED,
