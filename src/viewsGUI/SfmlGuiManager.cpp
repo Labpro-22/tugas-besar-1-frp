@@ -893,11 +893,15 @@ void SfmlGuiManager::consumeResult(const CommandResult& result, bool syncPiecePo
     cacheTimedChanceTransition(result);
     m_lastMessage = buildMessageFromResult(result);
     enqueueCardEventPopups(result);
+    std::string logPanelText = m_engine.getTransactionLogReport();
+    if (logPanelText.empty()) {
+        logPanelText = "=== Log Transaksi ===\n";
+    }
 
     const Player& current = m_engine.getCurrentPlayer();
     m_mainUi->updateData(m_engine.getPlayers(),
                          current,
-                         m_lastMessage,
+                         logPanelText,
                          m_engine.getCurrentTurn(),
                          m_engine.getMaxTurn());
 
@@ -913,10 +917,15 @@ void SfmlGuiManager::consumeResult(const CommandResult& result, bool syncPiecePo
 }
 
 void SfmlGuiManager::refreshFromEngineState() {
+    std::string logPanelText = m_engine.getTransactionLogReport();
+    if (logPanelText.empty()) {
+        logPanelText = "=== Log Transaksi ===\n";
+    }
+
     const Player& current = m_engine.getCurrentPlayer();
     m_mainUi->updateData(m_engine.getPlayers(),
                          current,
-                         m_lastMessage,
+                         logPanelText,
                          m_engine.getCurrentTurn(),
                          m_engine.getMaxTurn());
 

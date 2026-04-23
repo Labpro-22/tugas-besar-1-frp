@@ -90,6 +90,7 @@ private:
     std::vector<AssetItem> m_assetItems;
     std::vector<InventoryItem> m_inventoryItems;
     std::string m_systemLog;
+    std::string m_wrappedLogText;
     std::string m_currentPlayerName;
     int m_assetTotalValue;
 
@@ -98,6 +99,8 @@ private:
     bool m_draggingScrollbar;
     float m_dragGrabOffsetY;
     int m_pressedItemIndex;
+    float m_logScrollOffset;
+    float m_logMaxScrollOffset;
 
     bool m_detailPopupVisible;
     std::string m_detailTitle;
@@ -116,6 +119,9 @@ private:
     float computeTotalContentHeight() const;
     void clampScroll();
     void updateScrollVisual();
+    void refreshWrappedLog();
+    void clampLogScroll();
+    std::string wrapLogText(const std::string& rawText, float maxWidth) const;
 
     std::vector<sf::FloatRect> buildItemBounds() const;
     int itemIndexAt(sf::Vector2f mousePos) const;

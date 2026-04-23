@@ -1066,22 +1066,12 @@ CommandResult GameEngine::processCommand(const Command& cmd) {
             return finalizeResult();
         }
 
-        std::ostringstream out;
         if (!cmd.args.empty()) {
             const int n = std::stoi(cmd.args[0]);
-            out << "=== Log Transaksi (" << n << " Terakhir) ===\n";
-            const auto logs = logger->getLastN(n);
-            for (const LogEntry& entry : logs) {
-                out << entry.toString() << "\n";
-            }
+            result.addEvent(GameEventType::LOG, UiTone::INFO, "Log", getTransactionLogReportLastN(n));
         } else {
-            out << "=== Log Transaksi ===\n";
-            const auto& logs = logger->getAllLogs();
-            for (const LogEntry& entry : logs) {
-                out << entry.toString() << "\n";
-            }
+            result.addEvent(GameEventType::LOG, UiTone::INFO, "Log", getTransactionLogReport());
         }
-        result.addEvent(GameEventType::LOG, UiTone::INFO, "Log", out.str());
         return finalizeResult();
     }
 
@@ -1896,6 +1886,34 @@ EffectManager& GameEngine::getEffectManager() {
 TransactionLogger& GameEngine::getLogger() {
     if (!logger) throw GameException("TransactionLogger belum di-inject");
     return *logger;
+}
+
+std::string GameEngine::getTransactionLogReport() const {
+    if (!logger) {
+        return "";
+    }
+
+    std::ostringstream out;
+    out << "=== Log Transaksi ===\n";
+    const auto& logs = logger->getAllLogs();
+    for (const LogEntry& entry : logs) {
+        out << entry.toString() << "\n";
+    }
+    return out.str();
+}
+
+std::string GameEngine::getTransactionLogReportLastN(int n) const {
+    if (!logger) {
+        return "";
+    }
+
+    std::ostringstream out;
+    out << "=== Log Transaksi (" << n << " Terakhir) ===\n";
+    const auto logs = logger->getLastN(n);
+    for (const LogEntry& entry : logs) {
+        out << entry.toString() << "\n";
+    }
+    return out.str();
 }
 
 bool GameEngine::isGameOver()    const { return gameOver;                    }

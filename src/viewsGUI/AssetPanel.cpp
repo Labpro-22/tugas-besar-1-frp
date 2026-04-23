@@ -14,57 +14,8 @@
 
 namespace viewsGUI {
 namespace {
-constexpr std::size_t kLogWrapWidth = 35;
-
-std::string wrapTextByWord(const std::string& text, std::size_t maxCharsPerLine) {
-    if (maxCharsPerLine == 0 || text.empty()) {
-        return text;
-    }
-
-    std::istringstream lineStream(text);
-    std::string sourceLine;
-    std::string wrapped;
-    bool firstLine = true;
-
-    auto appendLine = [&](const std::string& line) {
-        if (!firstLine) {
-            wrapped.push_back('\n');
-        }
-        wrapped += line;
-        firstLine = false;
-    };
-
-    while (std::getline(lineStream, sourceLine)) {
-        std::istringstream words(sourceLine);
-        std::string word;
-        std::string currentLine;
-        bool hasWord = false;
-
-        while (words >> word) {
-            hasWord = true;
-            if (currentLine.empty()) {
-                currentLine = word;
-                continue;
-            }
-
-            if (currentLine.size() + 1 + word.size() <= maxCharsPerLine) {
-                currentLine += " " + word;
-            } else {
-                appendLine(currentLine);
-                currentLine = word;
-            }
-        }
-
-        if (!hasWord) {
-            appendLine("");
-            continue;
-        }
-
-        appendLine(currentLine);
-    }
-
-    return wrapped;
-}
+constexpr unsigned int kLogCharSize = 24U;
+constexpr float kLogLineSpacing = 1.15f;
 
 std::string toOwnershipStatusText(const Property& property) {
     if (property.isMortgaged()) {
@@ -197,6 +148,7 @@ AssetPanel::AssetPanel(const sf::Font& titleFont, const sf::Font& bodyFont)
       m_hasScrollbarAssets(false),
       m_uiAssetBaseDir(""),
       m_mode(Mode::ASSET),
+      m_wrappedLogText(""),
       m_currentPlayerName(""),
       m_assetTotalValue(0),
       m_scrollOffset(0.0f),
@@ -204,11 +156,14 @@ AssetPanel::AssetPanel(const sf::Font& titleFont, const sf::Font& bodyFont)
       m_draggingScrollbar(false),
       m_dragGrabOffsetY(0.0f),
       m_pressedItemIndex(-1),
+      m_logScrollOffset(0.0f),
+      m_logMaxScrollOffset(0.0f),
       m_detailPopupVisible(false) {
     m_titleText.setFont(m_titleFont);
     m_titleText.setCharacterSize(68);
     m_titleText.setFillColor(sf::Color(240, 239, 229));
     refreshPanelTitle();
+    refreshWrappedLog();
 }
 
 bool AssetPanel::loadAssets(const std::string& uiDir, const std::string& boardDir) {
@@ -308,16 +263,19 @@ void AssetPanel::setPosition(sf::Vector2f position) {
         m_scrollTrackSprite.setScale(sx, sy);
     }
 
+    refreshWrappedLog();
     updateScrollVisual();
 }
 
 void AssetPanel::setMode(Mode mode) {
     m_mode = mode;
     m_scrollOffset = 0.0f;
+    m_logScrollOffset = 0.0f;
     m_pressedItemIndex = -1;
     refreshPanelTitle();
 
     clampScroll();
+    clampLogScroll();
     updateScrollVisual();
 }
 
@@ -365,6 +323,109 @@ void AssetPanel::clampScroll() {
     const float contentHeight = getContentRect().height;
     m_maxScrollOffset = std::max(0.0f, computeTotalContentHeight() - contentHeight);
     m_scrollOffset = std::clamp(m_scrollOffset, 0.0f, m_maxScrollOffset);
+}
+
+std::string AssetPanel::wrapLogText(const std::string& rawText, float maxWidth) const {
+    if (rawText.empty() || maxWidth <= 0.0f) {
+        return rawText;
+    }
+
+    sf::Text measure("", m_bodyFont, kLogCharSize);
+    measure.setLineSpacing(kLogLineSpacing);
+
+    auto textWidth = [&measure](const std::string& value) {
+        if (value.empty()) {
+            return 0.0f;
+        }
+        measure.setString(value);
+        return measure.getLocalBounds().width;
+    };
+
+    std::istringstream source(rawText);
+    std::string sourceLine;
+    std::string wrapped;
+    bool firstLine = true;
+
+    auto appendWrappedLine = [&wrapped, &firstLine](const std::string& value) {
+        if (!firstLine) {
+            wrapped.push_back('\n');
+        }
+        wrapped += value;
+        firstLine = false;
+    };
+
+    while (std::getline(source, sourceLine)) {
+        if (sourceLine.empty()) {
+            appendWrappedLine("");
+            continue;
+        }
+
+        std::istringstream words(sourceLine);
+        std::string word;
+        std::string currentLine;
+
+        auto appendLongWord = [&](const std::string& longWord) {
+            std::string chunk;
+            for (char c : longWord) {
+                const std::string candidate = chunk + c;
+                if (!chunk.empty() && textWidth(candidate) > maxWidth) {
+                    appendWrappedLine(chunk);
+                    chunk.assign(1, c);
+                } else {
+                    chunk = candidate;
+                }
+            }
+            return chunk;
+        };
+
+        while (words >> word) {
+            if (currentLine.empty()) {
+                if (textWidth(word) <= maxWidth) {
+                    currentLine = word;
+                } else {
+                    currentLine = appendLongWord(word);
+                }
+                continue;
+            }
+
+            const std::string candidate = currentLine + " " + word;
+            if (textWidth(candidate) <= maxWidth) {
+                currentLine = candidate;
+                continue;
+            }
+
+            appendWrappedLine(currentLine);
+            if (textWidth(word) <= maxWidth) {
+                currentLine = word;
+            } else {
+                currentLine = appendLongWord(word);
+            }
+        }
+
+        appendWrappedLine(currentLine);
+    }
+
+    return wrapped;
+}
+
+void AssetPanel::clampLogScroll() {
+    const sf::FloatRect content = getContentRect();
+    const float lineHeight = m_bodyFont.getLineSpacing(kLogCharSize) * kLogLineSpacing;
+
+    int lineCount = 1;
+    if (!m_wrappedLogText.empty()) {
+        lineCount = 1 + static_cast<int>(std::count(m_wrappedLogText.begin(), m_wrappedLogText.end(), '\n'));
+    }
+    const float totalLogHeight = static_cast<float>(lineCount) * lineHeight + 8.0f;
+    m_logMaxScrollOffset = std::max(0.0f, totalLogHeight - content.height);
+    m_logScrollOffset = std::clamp(m_logScrollOffset, 0.0f, m_logMaxScrollOffset);
+}
+
+void AssetPanel::refreshWrappedLog() {
+    const sf::FloatRect content = getContentRect();
+    const float maxTextWidth = std::max(1.0f, content.width - 50.0f);
+    m_wrappedLogText = wrapLogText(m_systemLog, maxTextWidth);
+    clampLogScroll();
 }
 
 void AssetPanel::updateScrollVisual() {
@@ -495,10 +556,12 @@ void AssetPanel::updateData(const Player& currentPlayer, const std::string& syst
                                                  jailFreeKey});
     }
 
-    m_systemLog = wrapTextByWord(systemLog, kLogWrapWidth);
+    m_systemLog = systemLog;
+    refreshWrappedLog();
     refreshPanelTitle();
 
     clampScroll();
+    clampLogScroll();
     updateScrollVisual();
 }
 
@@ -556,12 +619,18 @@ void AssetPanel::update(sf::Vector2f mousePos) {
 }
 
 bool AssetPanel::handleMouseWheel(float delta, sf::Vector2f mousePos) {
-    if (m_mode == Mode::LOG || m_detailPopupVisible) {
+    if (m_detailPopupVisible) {
         return false;
     }
 
     if (!getContentRect().contains(mousePos)) {
         return false;
+    }
+
+    if (m_mode == Mode::LOG) {
+        m_logScrollOffset -= delta * 54.0f;
+        clampLogScroll();
+        return true;
     }
 
     m_scrollOffset -= delta * 54.0f;
@@ -808,10 +877,26 @@ void AssetPanel::renderAssetOrInventory(sf::RenderWindow& window) const {
 }
 
 void AssetPanel::renderLog(sf::RenderWindow& window) const {
-    sf::Text logText(m_systemLog, m_bodyFont, 24);
+    const sf::FloatRect content = getContentRect();
+    const sf::View previous = window.getView();
+
+    sf::View clipped;
+    clipped.setCenter(content.left + content.width * 0.5f,
+                      content.top + content.height * 0.5f + m_logScrollOffset);
+    clipped.setSize(content.width, content.height);
+    clipped.setViewport(sf::FloatRect(content.left / kDesignWidth,
+                                      content.top / kDesignHeight,
+                                      content.width / kDesignWidth,
+                                      content.height / kDesignHeight));
+    window.setView(clipped);
+
+    sf::Text logText(m_wrappedLogText, m_bodyFont, kLogCharSize);
+    logText.setLineSpacing(kLogLineSpacing);
     logText.setFillColor(sf::Color(53, 45, 36));
-    logText.setPosition(m_position.x + 34.0f, m_position.y + 106.0f);
+    logText.setPosition(content.left + 10.0f, content.top + 6.0f);
     window.draw(logText);
+
+    window.setView(previous);
 }
 
 void AssetPanel::renderDetailPopup(sf::RenderWindow& window) const {

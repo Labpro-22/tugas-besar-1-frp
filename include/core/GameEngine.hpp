@@ -131,6 +131,8 @@ class GameEngine{
         CardManager& getCardManager();
         EffectManager& getEffectManager();
         TransactionLogger& getLogger();
+        std::string getTransactionLogReport() const;
+        std::string getTransactionLogReportLastN(int n) const;
     
         bool isGameOver() const;
         int getMaxTurn() const;
