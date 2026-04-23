@@ -20,7 +20,7 @@ class SaveLoadManager {
     private:
         Gamestateserializer serializer;
 
-        // Validasi: ekstensi harus .txt, path tidak boleh kosong
+        // Validasi: ekstensi harus .txt/.nmp, path tidak boleh kosong
         void validatePath(const std::string& filename) const;
 
         // Baca seluruh isi file ke dalam string
@@ -33,7 +33,7 @@ class SaveLoadManager {
         SaveLoadManager() = default;
 
         /*
-        Serialisasi seluruh state engine lalu tulis ke file .txt
+        Serialisasi seluruh state engine lalu tulis ke file save
         Hanya boleh dipanggil di awal giliran (sebelum aksi apapun)
         TODO: uncomment saat GameEngine tersedia penuh
         void save(const GameEngine& engine, const std::string& filename) const;

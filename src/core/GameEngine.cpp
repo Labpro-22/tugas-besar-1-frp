@@ -45,6 +45,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <filesystem>
 #include <memory>
 #include <sstream>
 #include <stdexcept>
@@ -472,6 +473,59 @@ CommandResult GameEngine::loadGame(const std::string& filename) {
     return result;
 }
 
+bool GameEngine::tryLoadGame(const std::string& filename, CommandResult& outResult, std::string& outError) {
+    outError.clear();
+    try {
+        outResult = loadGame(filename);
+        return true;
+    } catch (const std::exception& e) {
+        outResult = CommandResult{};
+        outError = e.what();
+        return false;
+    }
+}
+
+bool GameEngine::canSaveAtTurnStart() const {
+    return gameStarted && !players.empty() && !gameOver && !turnActionTaken;
+}
+
+SaveGameResult GameEngine::saveGame(const std::string& filename, bool overwrite) {
+    SaveGameResult result;
+
+    if (!canSaveAtTurnStart()) {
+        result.status = SaveGameStatus::ERROR;
+        result.message = "SIMPAN hanya boleh dilakukan di awal giliran sebelum aksi apapun.";
+        return result;
+    }
+
+    std::string targetFilename = trimCopy(filename);
+    if (targetFilename.empty()) {
+        targetFilename = "game_save.nmp";
+    }
+
+    std::error_code ec;
+    if (!overwrite && std::filesystem::exists(targetFilename, ec) && !ec) {
+        result.status = SaveGameStatus::FILE_EXISTS;
+        result.message = "File \"" + targetFilename + "\" sudah ada.";
+        return result;
+    }
+
+    try {
+        SaveLoadManager manager;
+        manager.save(*this, targetFilename);
+        if (logger) {
+            logger->logSave(getCurrentPlayer().getUsername(), targetFilename);
+        }
+        result.status = SaveGameStatus::SUCCESS;
+        result.message = "Permainan berhasil disimpan ke: " + targetFilename;
+        return result;
+    } catch (const std::exception& e) {
+        result.status = SaveGameStatus::ERROR;
+        result.message = e.what();
+        return result;
+    }
+}
+
 void GameEngine::run() {
     // Loop utama — berjalan hingga gameOver di-set oleh checkWinCondition/endGame
     while (!gameOver) {
@@ -740,14 +794,12 @@ CommandResult GameEngine::processCommand(const Command& cmd) {
     case CommandType::SAVE:
     {
         result.commandName = "SIMPAN";
-        if (turnActionTaken) {
-            throw GameException("SIMPAN hanya boleh dilakukan di awal giliran sebelum aksi apapun.");
-        }
         const string filename = cmd.args.empty() ? "file_save.txt" : cmd.args[0];
-        SaveLoadManager manager;
-        manager.save(*this, filename);
-        if (logger) {
-            logger->logSave(getCurrentPlayer().getUsername(), filename);
+        const SaveGameResult saveResult = saveGame(filename, true);
+        if (saveResult.status != SaveGameStatus::SUCCESS) {
+            throw GameException(saveResult.message.empty()
+                                    ? "Gagal menyimpan permainan."
+                                    : saveResult.message);
         }
         result.addEvent(
             GameEventType::SAVE_LOAD,

@@ -8,6 +8,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <array>
 #include <vector>
 
 #include "../core/CommandResult.hpp"
@@ -17,13 +18,21 @@
 #include "DynamicPopupBox.hpp"
 #include "MainUI.hpp"
 #include "PieceRenderer.hpp"
+#include "SpriteButton.hpp"
 
 class GameEngine;
 class Property;
 struct Command;
 
 namespace viewsGUI {
-enum class GuiState { IDLE, ANIMATING_DICE, ANIMATING_PIECE, WAITING_CONFIRMATION, SHOWING_TIMED_CARD };
+enum class GuiState {
+    START_MENU,
+    IDLE,
+    ANIMATING_DICE,
+    ANIMATING_PIECE,
+    WAITING_CONFIRMATION,
+    SHOWING_TIMED_CARD
+};
 
 class SfmlGuiManager {
 public:
@@ -45,6 +54,16 @@ private:
     std::unique_ptr<DynamicPopupBox> m_popupBox;
     std::unique_ptr<DebugDicePopup> m_debugDicePopup;
     std::vector<std::unique_ptr<PieceRenderer>> m_players;
+    sf::Texture m_startMenuBackgroundTexture;
+    sf::Sprite m_startMenuBackgroundSprite;
+    SpriteButton m_startMenuNewGameButton;
+    SpriteButton m_startMenuLoadButton;
+    bool m_startMenuPlayerPopupVisible;
+    sf::RectangleShape m_startMenuPlayerPopupBackdrop;
+    sf::RectangleShape m_startMenuPlayerPopupPanel;
+    sf::Text m_startMenuPlayerPopupTitle;
+    std::array<sf::RectangleShape, 3> m_startMenuPlayerButtons;
+    std::array<sf::Text, 3> m_startMenuPlayerButtonLabels;
 
     std::string m_lastMessage;
     std::deque<PromptRequest> m_pendingPrompts;
@@ -55,6 +74,7 @@ private:
     std::optional<std::string> m_timedCardImageAfterLanding;
     std::optional<MovementPayload> m_timedCardMovementAfterPopup;
     std::optional<MovementPayload> m_splitMovementForCommand;
+    std::string m_pendingSaveFilename;
     std::string m_uiBasePath;
     std::string m_preTurnSkillGateKey;
     bool m_preTurnSkillHandled;
@@ -63,6 +83,18 @@ private:
     void update(sf::Time dt);
     void render();
 
+    bool loadStartMenuAssets();
+    void setupStartMenuPlayerPopup();
+    void updateStartMenuPlayerPopupHover(sf::Vector2f mousePos);
+    int hitStartMenuPlayerButton(sf::Vector2f mousePos) const;
+    void renderStartMenu();
+    void openStartMenuPlayerPopup();
+    void closeStartMenuPlayerPopup();
+    void startNewGameFromMenu(int playerCount);
+    void loadGameFromMenu();
+    void openLoadFilenamePopupFromMenu();
+    void submitLoadFromMenuRequest(const std::string& filename);
+    void showStartMenuMessagePopup(const std::string& title, const std::string& message);
     void bindEngineCallbacks();
     void initializeGameAndPieces();
     void refreshFromEngineState();
@@ -74,6 +106,10 @@ private:
 
     void submitRollDice();
     void submitManualDice(int die1, int die2);
+    void openSaveFilenamePopup();
+    void submitSaveRequest(const std::string& filename, bool overwrite);
+    void showSaveOverwriteConfirmation(const std::string& filename);
+    void showSaveNotificationPopup(const std::string& title, const std::string& message, UiTone tone);
     void executeDiceCommand(const Command& cmd);
     void openDebugDicePopup();
     void beginMovementAnimation(const MovementPayload& movement);

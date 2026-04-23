@@ -172,6 +172,32 @@ std::string sanitizeActionId(std::string value) {
     return value;
 }
 
+std::string trimCopy(std::string value) {
+    auto isSpaceLike = [](unsigned char c) {
+        return c == ' ' || c == '\t' || c == '\n' || c == '\r';
+    };
+
+    while (!value.empty() && isSpaceLike(static_cast<unsigned char>(value.front()))) {
+        value.erase(value.begin());
+    }
+    while (!value.empty() && isSpaceLike(static_cast<unsigned char>(value.back()))) {
+        value.pop_back();
+    }
+
+    return value;
+}
+
+std::string normalizeSaveFilename(std::string value, const std::string& fallbackName) {
+    value = trimCopy(value);
+    if (value.empty()) {
+        return fallbackName;
+    }
+    if (value.find('.') == std::string::npos) {
+        value += ".nmp";
+    }
+    return value;
+}
+
 int parseSkillTargetPromptCardIndex(const std::string& promptId) {
     const std::string prefix = "skill_target_";
     if (promptId.rfind(prefix, 0) != 0) {
@@ -235,6 +261,12 @@ void appendPreTurnDebugLog(const std::string& line) {
         out << line << '\n';
     }
 }
+
+void centerTextInRect(sf::Text& text, const sf::FloatRect& rect) {
+    const sf::FloatRect bounds = text.getLocalBounds();
+    text.setOrigin(bounds.left + (bounds.width * 0.5f), bounds.top + (bounds.height * 0.5f));
+    text.setPosition(rect.left + (rect.width * 0.5f), rect.top + (rect.height * 0.5f));
+}
 } // namespace
 
 namespace viewsGUI {
@@ -245,10 +277,12 @@ SfmlGuiManager::SfmlGuiManager(GameEngine& engine)
                sf::Style::Default),
       m_baseView(sf::FloatRect(0.0f, 0.0f, Layout1920::kDesignWidth, Layout1920::kDesignHeight)),
       m_engine(engine),
-      m_currentState(GuiState::IDLE),
+      m_currentState(GuiState::START_MENU),
+      m_startMenuPlayerPopupVisible(false),
       m_lastMessage("Siap memulai game."),
       m_cardTimer(0.0f),
       m_timedCardPopupFromQueue(false),
+      m_pendingSaveFilename(""),
       m_uiBasePath("assets/images/ui/"),
       m_preTurnSkillHandled(false) {
     if (!loadFontWithFallback()) {
@@ -280,11 +314,12 @@ SfmlGuiManager::SfmlGuiManager(GameEngine& engine)
         m_lastMessage += "\nPERINGATAN: Aset popup gagal dimuat.";
     }
 
-    initializeGameAndPieces();
+    if (!loadStartMenuAssets()) {
+        m_lastMessage += "\nPERINGATAN: Aset start screen gagal dimuat.";
+    }
+
     bindEngineCallbacks();
-    refreshFromEngineState();
-    setUiInputEnabled(true);
-    maybeShowPreTurnSkillPopup();
+    setUiInputEnabled(false);
 }
 
 bool SfmlGuiManager::loadFontWithFallback() {
@@ -337,10 +372,285 @@ void SfmlGuiManager::updateLetterboxView(unsigned int windowWidth, unsigned int 
     m_window.setView(m_baseView);
 }
 
-void SfmlGuiManager::initializeGameAndPieces() {
-    const CommandResult startResult = m_engine.startNewGame(4, {"P1", "P2", "P3", "P4"});
-    consumeResult(startResult, true);
+bool SfmlGuiManager::loadStartMenuAssets() {
+    bool success = true;
+    const std::string backgroundPath = m_uiBasePath + "start_screen.png";
+    const std::string newGamePath = m_uiBasePath + "btn_newgame.png";
+    const std::string loadPath = m_uiBasePath + "btn_load.png";
 
+    if (!m_startMenuBackgroundTexture.loadFromFile(backgroundPath)) {
+        std::cerr << "[ERROR] Gagal memuat start screen background: " << backgroundPath << "\n";
+        success = false;
+    }
+    m_startMenuBackgroundSprite.setTexture(m_startMenuBackgroundTexture);
+    const sf::Vector2u bgSize = m_startMenuBackgroundTexture.getSize();
+    if (bgSize.x > 0 && bgSize.y > 0) {
+        m_startMenuBackgroundSprite.setScale(
+            Layout1920::kDesignWidth / static_cast<float>(bgSize.x),
+            Layout1920::kDesignHeight / static_cast<float>(bgSize.y));
+    }
+
+    if (!m_startMenuNewGameButton.loadTextures(newGamePath, newGamePath, newGamePath, newGamePath)) {
+        success = false;
+    }
+    if (!m_startMenuLoadButton.loadTextures(loadPath, loadPath, loadPath, loadPath)) {
+        success = false;
+    }
+
+    auto applyButtonLayout = [](SpriteButton& button,
+                                const std::string& texturePath,
+                                sf::Vector2f pos,
+                                sf::Vector2f size) {
+        button.setPosition(pos);
+        sf::Texture textureProbe;
+        if (!textureProbe.loadFromFile(texturePath)) {
+            return;
+        }
+        const sf::Vector2u texSize = textureProbe.getSize();
+        if (texSize.x == 0 || texSize.y == 0) {
+            return;
+        }
+        button.setScale(sf::Vector2f(size.x / static_cast<float>(texSize.x),
+                                     size.y / static_cast<float>(texSize.y)));
+    };
+
+    const sf::Vector2f buttonSize(452.4f, 142.1f);
+    applyButtonLayout(m_startMenuNewGameButton, newGamePath, sf::Vector2f(507.6f, 715.5f), buttonSize);
+    applyButtonLayout(m_startMenuLoadButton, loadPath, sf::Vector2f(960.0f, 715.5f), buttonSize);
+
+    m_startMenuNewGameButton.setOnClick([this]() { openStartMenuPlayerPopup(); });
+    m_startMenuLoadButton.setOnClick([this]() { loadGameFromMenu(); });
+    setupStartMenuPlayerPopup();
+
+    return success;
+}
+
+void SfmlGuiManager::setupStartMenuPlayerPopup() {
+    m_startMenuPlayerPopupBackdrop.setSize(sf::Vector2f(Layout1920::kDesignWidth, Layout1920::kDesignHeight));
+    m_startMenuPlayerPopupBackdrop.setFillColor(sf::Color(0, 0, 0, 125));
+
+    const sf::Vector2f panelSize(540.0f, 300.0f);
+    const sf::Vector2f panelPos((Layout1920::kDesignWidth - panelSize.x) * 0.5f,
+                                (Layout1920::kDesignHeight - panelSize.y) * 0.5f);
+    m_startMenuPlayerPopupPanel.setSize(panelSize);
+    m_startMenuPlayerPopupPanel.setPosition(panelPos);
+    m_startMenuPlayerPopupPanel.setFillColor(sf::Color(244, 232, 208));
+    m_startMenuPlayerPopupPanel.setOutlineThickness(3.0f);
+    m_startMenuPlayerPopupPanel.setOutlineColor(sf::Color(90, 64, 36));
+
+    m_startMenuPlayerPopupTitle.setFont(m_titleFont);
+    m_startMenuPlayerPopupTitle.setCharacterSize(54);
+    m_startMenuPlayerPopupTitle.setFillColor(sf::Color(52, 40, 28));
+    m_startMenuPlayerPopupTitle.setString("PILIH JUMLAH PEMAIN");
+    centerTextInRect(m_startMenuPlayerPopupTitle,
+                     sf::FloatRect(panelPos.x, panelPos.y + 18.0f, panelSize.x, 80.0f));
+
+    static const std::array<int, 3> kPlayerChoices = {2, 3, 4};
+    const float buttonWidth = 130.0f;
+    const float buttonHeight = 84.0f;
+    const float gap = 34.0f;
+    const float totalWidth = (buttonWidth * 3.0f) + (gap * 2.0f);
+    const float startX = panelPos.x + (panelSize.x - totalWidth) * 0.5f;
+    const float y = panelPos.y + 152.0f;
+
+    for (size_t i = 0; i < m_startMenuPlayerButtons.size(); ++i) {
+        sf::RectangleShape& button = m_startMenuPlayerButtons[i];
+        button.setSize(sf::Vector2f(buttonWidth, buttonHeight));
+        button.setPosition(startX + static_cast<float>(i) * (buttonWidth + gap), y);
+        button.setFillColor(sf::Color(231, 214, 183));
+        button.setOutlineThickness(2.0f);
+        button.setOutlineColor(sf::Color(88, 63, 37));
+
+        sf::Text& label = m_startMenuPlayerButtonLabels[i];
+        label.setFont(m_titleFont);
+        label.setCharacterSize(52);
+        label.setFillColor(sf::Color(53, 42, 29));
+        label.setString(std::to_string(kPlayerChoices[i]) + "P");
+        centerTextInRect(label, button.getGlobalBounds());
+    }
+}
+
+void SfmlGuiManager::updateStartMenuPlayerPopupHover(sf::Vector2f mousePos) {
+    for (size_t i = 0; i < m_startMenuPlayerButtons.size(); ++i) {
+        sf::RectangleShape& button = m_startMenuPlayerButtons[i];
+        if (button.getGlobalBounds().contains(mousePos)) {
+            button.setFillColor(sf::Color(241, 226, 197));
+        } else {
+            button.setFillColor(sf::Color(231, 214, 183));
+        }
+    }
+}
+
+int SfmlGuiManager::hitStartMenuPlayerButton(sf::Vector2f mousePos) const {
+    for (size_t i = 0; i < m_startMenuPlayerButtons.size(); ++i) {
+        if (m_startMenuPlayerButtons[i].getGlobalBounds().contains(mousePos)) {
+            return static_cast<int>(i);
+        }
+    }
+    return -1;
+}
+
+void SfmlGuiManager::openStartMenuPlayerPopup() {
+    m_startMenuPlayerPopupVisible = true;
+}
+
+void SfmlGuiManager::closeStartMenuPlayerPopup() {
+    m_startMenuPlayerPopupVisible = false;
+}
+
+void SfmlGuiManager::renderStartMenu() {
+    if (m_startMenuBackgroundTexture.getSize().x > 0 && m_startMenuBackgroundTexture.getSize().y > 0) {
+        m_window.draw(m_startMenuBackgroundSprite);
+    } else {
+        sf::RectangleShape fallback(sf::Vector2f(Layout1920::kDesignWidth, Layout1920::kDesignHeight));
+        fallback.setFillColor(sf::Color(32, 24, 17));
+        m_window.draw(fallback);
+    }
+
+    m_startMenuNewGameButton.render(m_window);
+    m_startMenuLoadButton.render(m_window);
+
+    if (m_startMenuPlayerPopupVisible) {
+        m_window.draw(m_startMenuPlayerPopupBackdrop);
+        m_window.draw(m_startMenuPlayerPopupPanel);
+        m_window.draw(m_startMenuPlayerPopupTitle);
+        for (size_t i = 0; i < m_startMenuPlayerButtons.size(); ++i) {
+            m_window.draw(m_startMenuPlayerButtons[i]);
+            m_window.draw(m_startMenuPlayerButtonLabels[i]);
+        }
+    }
+}
+
+void SfmlGuiManager::startNewGameFromMenu(int playerCount) {
+    try {
+        closeStartMenuPlayerPopup();
+        m_pendingPrompts.clear();
+        m_pendingCardEventImagePaths.clear();
+        m_deferredMovement.reset();
+        m_splitMovementForCommand.reset();
+        m_timedCardImageAfterLanding.reset();
+        m_timedCardMovementAfterPopup.reset();
+        m_cardTimer = 0.0f;
+        m_timedCardPopupFromQueue = false;
+        m_preTurnSkillGateKey.clear();
+        m_preTurnSkillHandled = false;
+        if (m_popupBox->isVisible()) {
+            m_popupBox->hide();
+        }
+        if (m_debugDicePopup && m_debugDicePopup->isVisible()) {
+            m_debugDicePopup->hide();
+        }
+
+        std::vector<std::string> names;
+        names.reserve(static_cast<size_t>(playerCount));
+        for (int i = 1; i <= playerCount; ++i) {
+            names.push_back("P" + std::to_string(i));
+        }
+
+        const CommandResult startResult = m_engine.startNewGame(playerCount, names);
+        initializeGameAndPieces();
+        consumeResult(startResult, true);
+        enqueuePrompts(startResult.prompts);
+
+        m_currentState = GuiState::IDLE;
+        m_mainUi->setRollVisible(true);
+        setUiInputEnabled(true);
+        if (!m_pendingPrompts.empty()) {
+            processNextPrompt();
+        }
+    } catch (const std::exception& e) {
+        m_lastMessage = std::string("ERROR: ") + e.what();
+    }
+}
+
+void SfmlGuiManager::loadGameFromMenu() {
+    openLoadFilenamePopupFromMenu();
+}
+
+void SfmlGuiManager::openLoadFilenamePopupFromMenu() {
+    closeStartMenuPlayerPopup();
+
+    PromptRequest prompt;
+    prompt.id = "file_input_load";
+    prompt.title = "MUAT PERMAINAN";
+    prompt.message = "Masukkan nama file untuk dimuat (default: game_save.txt).";
+    prompt.required = false;
+    prompt.options = {
+        PromptOption{"SUBMIT", "Muat"},
+        PromptOption{"cancel", "Batal"}};
+
+    m_popupBox->showPrompt(prompt, [this](const std::string& answerKey) {
+        const std::string cleanAnswer = sanitizeActionId(answerKey);
+        m_popupBox->hide();
+
+        const std::string upper = upperCopy(cleanAnswer);
+        if (upper == "CANCEL" || upper == "CLOSE") {
+            return;
+        }
+
+        const std::string filename = normalizeSaveFilename(cleanAnswer, "game_save.nmp");
+        submitLoadFromMenuRequest(filename);
+    });
+}
+
+void SfmlGuiManager::submitLoadFromMenuRequest(const std::string& filename) {
+    try {
+        m_pendingPrompts.clear();
+        m_pendingCardEventImagePaths.clear();
+        m_deferredMovement.reset();
+        m_splitMovementForCommand.reset();
+        m_timedCardImageAfterLanding.reset();
+        m_timedCardMovementAfterPopup.reset();
+        m_cardTimer = 0.0f;
+        m_timedCardPopupFromQueue = false;
+        m_preTurnSkillGateKey.clear();
+        m_preTurnSkillHandled = false;
+        if (m_popupBox->isVisible()) {
+            m_popupBox->hide();
+        }
+        if (m_debugDicePopup && m_debugDicePopup->isVisible()) {
+            m_debugDicePopup->hide();
+        }
+
+        CommandResult loadResult;
+        std::string loadError;
+        if (!m_engine.tryLoadGame(filename, loadResult, loadError)) {
+            showStartMenuMessagePopup("GAGAL MUAT",
+                                      loadError.empty() ? "File tidak ditemukan atau rusak."
+                                                        : loadError);
+            return;
+        }
+
+        initializeGameAndPieces();
+        consumeResult(loadResult, true);
+        enqueuePrompts(loadResult.prompts);
+
+        m_currentState = GuiState::IDLE;
+        m_mainUi->setRollVisible(true);
+        setUiInputEnabled(true);
+        if (!m_pendingPrompts.empty()) {
+            processNextPrompt();
+        }
+    } catch (const std::exception& e) {
+        showStartMenuMessagePopup("GAGAL MUAT", e.what());
+    }
+}
+
+void SfmlGuiManager::showStartMenuMessagePopup(const std::string& title, const std::string& message) {
+    PopupPayload payload;
+    payload.mode = PopupMode::INFO;
+    payload.headerTitle = title.empty() ? "NOTIFIKASI" : title;
+    payload.cardTitle = payload.headerTitle;
+    payload.description = message.empty() ? "Terjadi kesalahan." : message;
+    payload.actionItems = {
+        PopupActionItem{"close", "OK", "assets/images/ui/btn_cancel.png", true}};
+
+    m_popupBox->show(payload, [this](const std::string&) {
+        m_popupBox->hide();
+    });
+}
+
+void SfmlGuiManager::initializeGameAndPieces() {
     const auto& players = m_engine.getPlayers();
     static const std::array<sf::Color, 6> pieceColors = {
         sf::Color(216, 83, 79),
@@ -376,6 +686,104 @@ void SfmlGuiManager::bindEngineCallbacks() {
 
 void SfmlGuiManager::setUiInputEnabled(bool enabled) {
     m_mainUi->setRollEnabled(enabled);
+}
+
+void SfmlGuiManager::openSaveFilenamePopup() {
+    PromptRequest prompt;
+    prompt.id = "file_input_save";
+    prompt.title = "SIMPAN PERMAINAN";
+    prompt.message = "Masukkan nama file save (default: game_save.nmp).";
+    prompt.required = false;
+    prompt.options = {
+        PromptOption{"SUBMIT", "Simpan"},
+        PromptOption{"cancel", "Batal"}};
+
+    m_currentState = GuiState::WAITING_CONFIRMATION;
+    m_mainUi->setRollVisible(false);
+    setUiInputEnabled(false);
+
+    m_popupBox->showPrompt(prompt, [this](const std::string& answerKey) {
+        const std::string cleanAnswer = sanitizeActionId(answerKey);
+        m_popupBox->hide();
+
+        const std::string upper = upperCopy(cleanAnswer);
+        if (upper == "CANCEL" || upper == "CLOSE") {
+            resumeFlowAfterPopup();
+            return;
+        }
+
+        const std::string filename = normalizeSaveFilename(cleanAnswer, "game_save.nmp");
+        submitSaveRequest(filename, false);
+    });
+}
+
+void SfmlGuiManager::submitSaveRequest(const std::string& filename, bool overwrite) {
+    m_pendingSaveFilename = filename;
+    const SaveGameResult saveResult = m_engine.saveGame(filename, overwrite);
+
+    if (saveResult.status == SaveGameStatus::SUCCESS) {
+        showSaveNotificationPopup("BERHASIL MENYIMPAN",
+                                  saveResult.message.empty() ? "Permainan berhasil disimpan."
+                                                             : saveResult.message,
+                                  UiTone::SUCCESS);
+        return;
+    }
+
+    if (saveResult.status == SaveGameStatus::FILE_EXISTS) {
+        showSaveOverwriteConfirmation(filename);
+        return;
+    }
+
+    showSaveNotificationPopup("GAGAL MENYIMPAN",
+                              saveResult.message.empty() ? "Gagal menyimpan permainan."
+                                                         : saveResult.message,
+                              UiTone::ERROR);
+}
+
+void SfmlGuiManager::showSaveOverwriteConfirmation(const std::string& filename) {
+    PopupPayload payload;
+    payload.mode = PopupMode::INFO;
+    payload.headerTitle = "KONFIRMASI";
+    payload.cardTitle = "SIMPAN";
+    payload.description = "File sudah ada. Timpa file lama?\n" + filename;
+    payload.actionItems = {
+        PopupActionItem{"overwrite_yes", "Ya, Timpa", "assets/images/ui/btn_beli.png", true},
+        PopupActionItem{"cancel", "Tidak", "assets/images/ui/btn_cancel.png", true}};
+
+    m_currentState = GuiState::WAITING_CONFIRMATION;
+    m_mainUi->setRollVisible(false);
+    setUiInputEnabled(false);
+
+    m_popupBox->show(payload, [this, filename](const std::string& actionId) {
+        const std::string cleanAction = sanitizeActionId(actionId);
+        m_popupBox->hide();
+        if (cleanAction == "overwrite_yes") {
+            submitSaveRequest(filename, true);
+            return;
+        }
+        resumeFlowAfterPopup();
+    });
+}
+
+void SfmlGuiManager::showSaveNotificationPopup(const std::string& title,
+                                               const std::string& message,
+                                               UiTone tone) {
+    PopupPayload payload;
+    payload.mode = PopupMode::INFO;
+    payload.headerTitle = title.empty() ? "NOTIFIKASI" : title;
+    payload.cardTitle = (tone == UiTone::ERROR) ? "ERROR" : "SUKSES";
+    payload.description = message.empty() ? "Operasi selesai." : message;
+    payload.actionItems = {
+        PopupActionItem{"close", "OK", "assets/images/ui/btn_cancel.png", true}};
+
+    m_currentState = GuiState::WAITING_CONFIRMATION;
+    m_mainUi->setRollVisible(false);
+    setUiInputEnabled(false);
+
+    m_popupBox->show(payload, [this](const std::string&) {
+        m_popupBox->hide();
+        resumeFlowAfterPopup();
+    });
 }
 
 void SfmlGuiManager::submitRollDice() {
@@ -1068,6 +1476,71 @@ void SfmlGuiManager::processEvents() {
             continue;
         }
 
+        if (m_currentState == GuiState::START_MENU) {
+            if (m_popupBox->isVisible()) {
+                if (event.type == sf::Event::TextEntered) {
+                    m_popupBox->handleTextEntered(event.text.unicode);
+                    continue;
+                }
+
+                if (event.type == sf::Event::KeyPressed) {
+                    m_popupBox->handleKeyPressed(event.key.code);
+                    continue;
+                }
+
+                if (event.type == sf::Event::MouseButtonPressed && event.mouseButton.button == sf::Mouse::Left) {
+                    const sf::Vector2f mousePos =
+                        m_window.mapPixelToCoords(sf::Mouse::getPosition(m_window), m_baseView);
+                    m_popupBox->handleMousePressed(mousePos);
+                    continue;
+                }
+
+                if (event.type == sf::Event::MouseButtonReleased && event.mouseButton.button == sf::Mouse::Left) {
+                    const sf::Vector2f mousePos =
+                        m_window.mapPixelToCoords(sf::Mouse::getPosition(m_window), m_baseView);
+                    m_popupBox->handleMouseReleased(mousePos);
+                    continue;
+                }
+            }
+
+            if (event.type == sf::Event::MouseButtonPressed && event.mouseButton.button == sf::Mouse::Left) {
+                const sf::Vector2f mousePos =
+                    m_window.mapPixelToCoords(sf::Mouse::getPosition(m_window), m_baseView);
+                if (m_startMenuPlayerPopupVisible) {
+                    const int hit = hitStartMenuPlayerButton(mousePos);
+                    if (hit >= 0) {
+                        m_startMenuPlayerButtons[static_cast<size_t>(hit)].setFillColor(sf::Color(215, 189, 145));
+                    }
+                } else {
+                    m_startMenuNewGameButton.handleMousePressed(mousePos);
+                    m_startMenuLoadButton.handleMousePressed(mousePos);
+                }
+            } else if (event.type == sf::Event::MouseButtonReleased &&
+                       event.mouseButton.button == sf::Mouse::Left) {
+                const sf::Vector2f mousePos =
+                    m_window.mapPixelToCoords(sf::Mouse::getPosition(m_window), m_baseView);
+                if (m_startMenuPlayerPopupVisible) {
+                    const int hit = hitStartMenuPlayerButton(mousePos);
+                    if (hit == 0) {
+                        startNewGameFromMenu(2);
+                    } else if (hit == 1) {
+                        startNewGameFromMenu(3);
+                    } else if (hit == 2) {
+                        startNewGameFromMenu(4);
+                    } else if (!m_startMenuPlayerPopupPanel.getGlobalBounds().contains(mousePos)) {
+                        closeStartMenuPlayerPopup();
+                    }
+                    updateStartMenuPlayerPopupHover(mousePos);
+                } else {
+                    if (m_startMenuNewGameButton.handleMouseReleased(mousePos)) {
+                        continue;
+                    }
+                    m_startMenuLoadButton.handleMouseReleased(mousePos);
+                }
+            }
+            continue;
+        }
+
         if (event.type == sf::Event::TextEntered) {
             if (showingTimedCard) {
                 continue;
@@ -1090,6 +1563,18 @@ void SfmlGuiManager::processEvents() {
             }
             if (m_popupBox->isVisible() && !m_popupBox->isMinimized() &&
                 m_popupBox->handleKeyPressed(event.key.code)) {
+                continue;
+            }
+
+            if (event.key.control && event.key.code == sf::Keyboard::S) {
+                if (m_currentState != GuiState::IDLE || m_popupBox->isVisible()) {
+                    continue;
+                }
+                if (!m_engine.canSaveAtTurnStart()) {
+                    showBackendErrorPopup("SIMPAN hanya boleh dilakukan di awal giliran sebelum aksi apapun.");
+                    continue;
+                }
+                openSaveFilenamePopup();
                 continue;
             }
         }
@@ -1196,6 +1681,18 @@ void SfmlGuiManager::update(sf::Time dt) {
     const sf::Vector2f mousePos =
         m_window.mapPixelToCoords(sf::Mouse::getPosition(m_window), m_baseView);
 
+    if (m_currentState == GuiState::START_MENU) {
+        if (m_popupBox->isVisible()) {
+            m_popupBox->update(mousePos);
+        } else if (m_startMenuPlayerPopupVisible) {
+            updateStartMenuPlayerPopupHover(mousePos);
+        } else {
+            m_startMenuNewGameButton.update(mousePos);
+            m_startMenuLoadButton.update(mousePos);
+        }
+        return;
+    }
+
     const bool debugPopupVisible = m_debugDicePopup && m_debugDicePopup->isVisible();
     const bool popupExpanded = m_popupBox->isVisible() && !m_popupBox->isMinimized();
     if (debugPopupVisible) {
@@ -1257,6 +1754,13 @@ void SfmlGuiManager::update(sf::Time dt) {
 void SfmlGuiManager::render() {
     m_window.clear(sf::Color::Black);
     m_window.setView(m_baseView);
+
+    if (m_currentState == GuiState::START_MENU) {
+        renderStartMenu();
+        m_popupBox->render(m_window);
+        m_window.display();
+        return;
+    }
 
     m_mainUi->renderBackground(m_window);
     m_boardView->render(m_window, m_engine.getBoard());

@@ -121,6 +121,7 @@ private:
 
     bool m_promptWantsBidInput;
     bool m_promptWantsTextInput;
+    bool m_promptTextInputForceUppercase;
     std::string m_bidInputValue;
 
     int m_pressedActionIndex;

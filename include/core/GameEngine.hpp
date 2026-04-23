@@ -29,6 +29,17 @@ enum class GameOverReason {
     MAX_TURN
 };
 
+enum class SaveGameStatus {
+    SUCCESS,
+    FILE_EXISTS,
+    ERROR
+};
+
+struct SaveGameResult {
+    SaveGameStatus status = SaveGameStatus::ERROR;
+    std::string message;
+};
+
 class GameEngine{
     private:
         Board* board;
@@ -106,6 +117,9 @@ class GameEngine{
         //Siklus permainan
         CommandResult startNewGame(int nPlayers, std::vector<std::string> names);
         CommandResult loadGame(const std::string& filename);
+        bool tryLoadGame(const std::string& filename, CommandResult& outResult, std::string& outError);
+        bool canSaveAtTurnStart() const;
+        SaveGameResult saveGame(const std::string& filename, bool overwrite = false);
         void run();
         CommandResult processCommand(const Command& cmd);
         CommandResult executeTurn();

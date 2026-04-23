@@ -195,6 +195,7 @@ DynamicPopupBox::DynamicPopupBox(sf::Vector2f windowSize,
       m_mode(PopupMode::INFO),
       m_promptWantsBidInput(false),
       m_promptWantsTextInput(false),
+      m_promptTextInputForceUppercase(false),
       m_pressedActionIndex(-1),
       m_pressedMinimize(false),
       m_pressedShowMenu(false) {
@@ -292,6 +293,7 @@ void DynamicPopupBox::show(const PopupPayload& payload, ActionCallback onAction)
     if (m_mode == PopupMode::FULL_IMAGE_DISMISSABLE) {
         m_promptWantsBidInput = false;
         m_promptWantsTextInput = false;
+        m_promptTextInputForceUppercase = false;
         m_bidInputValue.clear();
         m_bidInputText.setString("");
         m_actionSprites.clear();
@@ -401,13 +403,15 @@ PopupPayload DynamicPopupBox::buildFromPrompt(const PromptRequest& prompt) {
     });
     const bool isAuctionPrompt = startsWith(prompt.id, "lelang_") || hasBidOption;
     const bool isSkillTargetPrompt = startsWith(prompt.id, "skill_target_");
+    const bool isFileInputPrompt = startsWith(prompt.id, "file_input_");
     const bool hasTargetSubmitOption = std::any_of(
         prompt.options.begin(), prompt.options.end(), [](const PromptOption& option) {
             return equalsIgnoreCase(option.key, "SUBMIT");
         });
 
     m_promptWantsBidInput = isAuctionPrompt;
-    m_promptWantsTextInput = isSkillTargetPrompt && hasTargetSubmitOption;
+    m_promptWantsTextInput = (isSkillTargetPrompt && hasTargetSubmitOption) || isFileInputPrompt;
+    m_promptTextInputForceUppercase = isSkillTargetPrompt;
 
     payload.mode = isFestivalPrompt || isAuctionPrompt || isSkillTargetPrompt || isBankruptcyPrompt
         ? PopupMode::SPECIAL
@@ -433,6 +437,12 @@ PopupPayload DynamicPopupBox::buildFromPrompt(const PromptRequest& prompt) {
         payload.headerTitle = prompt.title.empty() ? "TARGET KARTU" : prompt.title;
         payload.cardTitle = "INPUT TARGET";
         m_bidInputHint.setString("Ketik ID/KODE target...");
+    }
+
+    if (isFileInputPrompt) {
+        payload.headerTitle = prompt.title.empty() ? "INPUT FILE" : prompt.title;
+        payload.cardTitle = "NAMA FILE";
+        m_bidInputHint.setString("Contoh: game_save.nmp");
     }
 
     if (isBankruptcyPrompt) {
@@ -470,11 +480,11 @@ PopupPayload DynamicPopupBox::buildFromPrompt(const PromptRequest& prompt) {
             }
         }
 
-        if (isSkillTargetPrompt) {
+        if (m_promptWantsTextInput) {
             if (equalsIgnoreCase(key, "SUBMIT")) {
                 payload.actionItems.push_back(PopupActionItem{
                     std::string(kPromptAnswerPrefix) + kPromptCustomTargetKey,
-                    label.empty() ? "KIRIM TARGET" : label,
+                    label.empty() ? "OK" : label,
                     "assets/images/ui/btn_beli.png",
                     true});
                 hasCustomTargetAction = true;
@@ -504,10 +514,10 @@ PopupPayload DynamicPopupBox::buildFromPrompt(const PromptRequest& prompt) {
         }
     }
 
-    if (isSkillTargetPrompt && !hasCustomTargetAction) {
+    if (m_promptWantsTextInput && !hasCustomTargetAction) {
         payload.actionItems.push_back(PopupActionItem{
             std::string(kPromptAnswerPrefix) + kPromptCustomTargetKey,
-            "KIRIM TARGET",
+            "OK",
             "assets/images/ui/btn_beli.png",
             true});
     }
@@ -525,6 +535,7 @@ void DynamicPopupBox::hide() {
     m_isMinimized = false;
     m_promptWantsBidInput = false;
     m_promptWantsTextInput = false;
+    m_promptTextInputForceUppercase = false;
     m_bidInputValue.clear();
     m_bidInputText.setString("");
     m_pressedActionIndex = -1;
@@ -620,12 +631,22 @@ bool DynamicPopupBox::handleTextEntered(sf::Uint32 unicode) {
         }
     } else if (m_promptWantsTextInput) {
         const char ch = static_cast<char>(unicode);
-        const bool allowed = std::isalnum(static_cast<unsigned char>(ch)) || ch == '_' || ch == '-';
+        bool allowed = false;
+        if (m_promptTextInputForceUppercase) {
+            allowed = std::isalnum(static_cast<unsigned char>(ch)) || ch == '_' || ch == '-';
+        } else {
+            allowed = std::isalnum(static_cast<unsigned char>(ch)) ||
+                      ch == '_' || ch == '-' || ch == '.' || ch == '/' || ch == '\\';
+        }
         if (!allowed) {
             return false;
         }
-        if (m_bidInputValue.size() < 16) {
-            m_bidInputValue.push_back(static_cast<char>(std::toupper(static_cast<unsigned char>(ch))));
+        if (m_bidInputValue.size() < 64) {
+            if (m_promptTextInputForceUppercase) {
+                m_bidInputValue.push_back(static_cast<char>(std::toupper(static_cast<unsigned char>(ch))));
+            } else {
+                m_bidInputValue.push_back(ch);
+            }
         }
     } else {
         return false;
