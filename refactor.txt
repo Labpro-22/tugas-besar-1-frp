@@ -1,0 +1,47 @@
+Ini adalah kesalahan2 di dalam GUI (bukan di CLI, anda bisa mencoba testcase run di CLI untuk melihat yang benar):
+
+- bisa beli rumah kapan saja bahkan sebelum punya tanah, seharusnya ada batasan (pop up harus hanya menampilkan tombol yang aksinya memungkinkan):
+Pemain dapat meningkatkan properti jenis Street yang dimilikinya dengan membangun rumah dan hotel selama giliran mereka. Peningkatan properti hanya dapat dilakukan apabila pemain telah memonopoli seluruh Street dalam satu color group. Setiap peningkatan akan menaikkan nilai sewa yang harus dibayar oleh pemain lain yang mendarat di properti tersebut.
+Stok bangunan tidak terbatas. Pemain dapat membangun rumah dan hotel tanpa dibatasi oleh ketersediaan stok fisik.
+Terdapat dua jenis bangunan yang dapat didirikan: rumah dan hotel. Rumah dapat dibangun hingga maksimal 4 buah per petak. Setelah seluruh petak dalam satu color group memiliki 4 rumah masing-masing, pemain dapat meng-upgrade ke hotel. Hanya boleh ada 1 hotel per petak dan hotel merupakan tingkat bangunan tertinggi yang dapat dicapai. Petak yang sudah berstatus hotel tidak dapat dibangun lebih lanjut.
+Pembangunan rumah harus dilakukan secara merata di seluruh petak dalam satu color group. Artinya, selisih jumlah rumah antar petak dalam satu color group tidak boleh melebihi 1 pada setiap saat. Pemain tidak dapat menambah rumah ke-2 di suatu petak sebelum seluruh petak lain dalam color group yang sama memiliki setidaknya 1 rumah. Petak yang tidak memenuhi syarat pemerataan ini tidak akan ditampilkan sebagai pilihan pada perintah BANGUN.
+
+- saat ada pop up, meskipun pop up sudah diminimize, bagian board tidak bisa diklik untuk melihat log, inventory, dl. perbaiki agar bisa
+
+- saat ke kolom festival, gui hanya menampilkan pop up "festival ditangani engine", padahal seharusnya pop up menampilkan aksi yang memungkinkan dengan deskripsi sebagai berikut:
+Petak festival merupakan petak aksi yang dapat melipatgandakan harga sewa dari properti yang dimiliki. Ketika seorang pemain berhenti di petak festival, pemain tersebut dapat memilih salah satu dari properti yang ia miliki. Harga sewa dari properti yang dipilih akan naik dua kali lipat selama tiga giliran. Jika pemain berhenti kembali di petak festival dan memilih properti yang sama, durasi dikembalikan menjadi tiga giliran (jika durasi sudah berkurang) dan harga sewa naik dua kali lipat lagi. Hal ini dapat berulang hingga tiga kali (maksimum harga sewa naik delapan kali lipat), selebihnya hanya mengembalikan durasi.
+Berikut contoh skenario yang mungkin terjadi:
+Pemain A berhenti pada petak festival lalu memilih properti Z (harga sewa awal 5.000). Harga sewa properti Z menjadi 10.000 selama tiga giliran pemain A.
+Giliran pemain A lagi, durasi festival pada properti Z berkurang satu. Pemain A berhenti di petak festival lagi dan memilih properti Y (harga sewa dari 2.000 menjadi 4.000) selama tiga giliran. Perhitungan durasi terpisah untuk setiap properti (Z tersisa dua giliran dan Y  tiga giliran).
+Giliran pemain A lagi, durasi Z = 1, Y = 2. Pemain A berhenti di petak festival lagi dan memilih properti Z. Harga sewa properti Z menjadi 20.000 dan durasi kembali menjadi tiga giliran.
+Skenario (3) terulang kembali, durasi Z = 2, Y = 1. Harga sewa properti Z menjadi 40.000 dan durasi kembali menjadi tiga giliran.
+Skenario (3) terulang kembali, durasi Z = 2, Y = 0. Harga sewa properti Y kembali seperti semula. Harga sewa properti Z tetap 40.000 (max kenaikan harga sewa sebanyak tiga kali). Durasi kembali menjadi tiga giliran.
+
+- sistem bid juga masih belum berjalan, seharusnya seperti deskripsi di bawah ini:
+Ketika seorang pemain berhenti pada petak properti street, ia dapat memilih untuk TIDAK membeli properti tersebut (atau tidak mampu membeli). Ketika hal ini terjadi, petak properti tersebut akan secara otomatis dilelang. Ketika seorang pemain bangkrut ke Bank dan permainan masih terus berlanjut, SEMUA petak properti yang dimiliki pemain yang bangkrut tersebut akan otomatis dilelang satu per satu. Urutan properti yang dilelang dibebaskan.
+Mekanisme Lelang
+Berikut merupakan langkah-langkah terjadinya lelang:
+Lelang dimulai dari pemain yang memiliki giliran setelah pemain yang memicu lelang, lalu berlanjut sesuai urutan giliran permainan.
+Pada gilirannya, setiap pemain hanya dapat memilih satu dari dua aksi:
+Pass: Tidak mengajukan penawaran dan melewatkan giliran.
+Bid: Mengajukan penawaran harga untuk membeli properti.
+Penawaran pertama (bid awal) minimal adalah M0. Setiap bid berikutnya harus lebih tinggi dari bid sebelumnya.
+Lelang berlanjut hingga terjadi pass berturut-turut sebanyak (jumlah pemain - 1). Jika lelang terjadi karena kondisi bangkrut, jumlah pemain tidak menghitung pemain yang bangkrut tersebut. Jika kondisi tersebut tercapai, maka:
+Pemain yang terakhir melakukan bid menjadi pemenang lelang.
+Pemenang membayar sesuai nilai bid terakhir.
+Properti diberikan kepada pemenang.
+Minimal terdapat satu pemain yang melakukan bid. Jika terjadi kondisi (4) tanpa ada pemain yang melakukan bid, maka pemain terakhir yang tidak melakukan pass harus melakukan bid. Lelang berlanjut seperti biasa.
+Pemain tidak dapat melakukan bid melebihi uang yang dimiliki.
+Setelah lelang selesai, permainan kembali ke urutan giliran normal (bukan berdasarkan urutan lelang).
+Giliran lelang bukan bagian dari giliran permainan biasa. Giliran lelang tidak mempengaruhi durasi efek apa pun atau perhitungan giliran untuk batas maksimum jumlah giliran.
+Misal urutan permainan A, B, C, D
+Pemain A memicu lelang (mungkin karena tidak membeli properti)
+Lelang dimulai dari pemain setelah A. Giliran lelang: B, C, D, A
+B: pass
+C: pass
+D: pass
+Terjadi pass sebanyak jumlah pemain - 1, namun belum ada bid sama sekali di lelang ini. Oleh karena itu, pemain A (pemain selanjutnya) tidak memiliki opsi pass dan hanya bisa bid.
+
+- Setiap sebelum pemain melakukan turn, seharusnya pop up menampilkan kartu kemampuan yang dimiliki saat ini lalu memberikan opsi untuk menggunakan kartu atau tidak. jika ingin menggunakan kartu klik pada bagian gambar kartu
+
+- seharusnya bidak/ikon/token pemain di board bergerak setelah animasi dadu selesai

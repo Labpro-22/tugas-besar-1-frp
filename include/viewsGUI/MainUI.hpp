@@ -49,6 +49,7 @@ private:
     sf::Sprite m_backgroundSprite;
 
     SpriteButton m_rollDiceButton;
+    sf::Text m_turnStatusText;
     SpriteButton m_tabAsset;
     SpriteButton m_tabLog;
     SpriteButton m_tabInventory;

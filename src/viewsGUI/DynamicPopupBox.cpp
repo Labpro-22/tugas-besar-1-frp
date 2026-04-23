@@ -1,11 +1,56 @@
 #include "../../include/viewsGUI/DynamicPopupBox.hpp"
 
 #include <algorithm>
+#include <cctype>
+#include <fstream>
 #include <iostream>
 #include <sstream>
 
 namespace {
 constexpr const char* kPromptAnswerPrefix = "prompt_answer:";
+constexpr const char* kPromptCustomBidKey = "BID_CUSTOM";
+constexpr const char* kPromptCustomTargetKey = "TARGET_CUSTOM";
+
+bool startsWith(const std::string& value, const std::string& prefix) {
+    return value.rfind(prefix, 0) == 0;
+}
+
+bool equalsIgnoreCase(const std::string& lhs, const std::string& rhs) {
+    if (lhs.size() != rhs.size()) {
+        return false;
+    }
+
+    for (size_t i = 0; i < lhs.size(); ++i) {
+        if (std::toupper(static_cast<unsigned char>(lhs[i])) !=
+            std::toupper(static_cast<unsigned char>(rhs[i]))) {
+            return false;
+        }
+    }
+    return true;
+}
+
+int parseAuctionMinBidFromPromptId(const std::string& promptId) {
+    if (!startsWith(promptId, "lelang_")) {
+        return 0;
+    }
+
+    const size_t lastUnderscore = promptId.rfind('_');
+    if (lastUnderscore == std::string::npos || lastUnderscore == 0) {
+        return 0;
+    }
+
+    const size_t prevUnderscore = promptId.rfind('_', lastUnderscore - 1);
+    if (prevUnderscore == std::string::npos || prevUnderscore + 1 >= lastUnderscore) {
+        return 0;
+    }
+
+    try {
+        const int highestBid = std::stoi(promptId.substr(prevUnderscore + 1, lastUnderscore - prevUnderscore - 1));
+        return std::max(0, highestBid) + 1;
+    } catch (const std::exception&) {
+        return 0;
+    }
+}
 
 // Layout tuning point untuk DynamicPopupBox (1920x1080).
 // Ubah angka-angka di sini untuk geser posisi/ukuran komponen popup.
@@ -129,6 +174,13 @@ std::string wrapTextByWidth(const sf::Font& font,
 
     return out.str();
 }
+
+void appendPopupDebugLog(const std::string& line) {
+    std::ofstream out("build/gui_preturn_debug.log", std::ios::app);
+    if (out.is_open()) {
+        out << line << '\n';
+    }
+}
 } // namespace
 
 namespace viewsGUI {
@@ -141,6 +193,8 @@ DynamicPopupBox::DynamicPopupBox(sf::Vector2f windowSize,
       m_headerFont(headerFont),
       m_bodyFont(bodyFont),
       m_mode(PopupMode::INFO),
+      m_promptWantsBidInput(false),
+      m_promptWantsTextInput(false),
       m_pressedActionIndex(-1),
       m_pressedMinimize(false),
       m_pressedShowMenu(false) {
@@ -164,6 +218,20 @@ DynamicPopupBox::DynamicPopupBox(sf::Vector2f windowSize,
     m_showMenuText.setCharacterSize(24);
     m_showMenuText.setFillColor(sf::Color(53, 45, 36));
     m_showMenuText.setString("Show Menu");
+
+    m_bidInputBox.setSize(sf::Vector2f(240.0f, 54.0f));
+    m_bidInputBox.setFillColor(sf::Color(252, 244, 228));
+    m_bidInputBox.setOutlineThickness(2.0f);
+    m_bidInputBox.setOutlineColor(sf::Color(181, 164, 128));
+
+    m_bidInputText.setFont(m_bodyFont);
+    m_bidInputText.setCharacterSize(24);
+    m_bidInputText.setFillColor(sf::Color(53, 45, 36));
+
+    m_bidInputHint.setFont(m_bodyFont);
+    m_bidInputHint.setCharacterSize(18);
+    m_bidInputHint.setFillColor(sf::Color(120, 110, 96));
+    m_bidInputHint.setString("Ketik nominal BID...");
 
     m_propertyRibbon.setFillColor(sf::Color(181, 164, 128));
 }
@@ -273,17 +341,139 @@ void DynamicPopupBox::show(const PopupPayload& payload, ActionCallback onAction)
 }
 
 void DynamicPopupBox::showPrompt(const PromptRequest& prompt, ActionCallback onAnswer) {
+    m_bidInputValue.clear();
+    m_bidInputText.setString("");
+
+    PopupPayload payload = buildFromPrompt(prompt);
+    show(payload, [this, onAnswer = std::move(onAnswer)](const std::string& actionId) {
+        if (actionId.rfind(kPromptAnswerPrefix, 0) == 0) {
+            const std::string answer = actionId.substr(std::char_traits<char>::length(kPromptAnswerPrefix));
+            if (answer == kPromptCustomBidKey) {
+                if (m_bidInputValue.empty()) {
+                    onAnswer("BID_MIN");
+                } else {
+                    onAnswer("BID " + m_bidInputValue);
+                }
+                return;
+            }
+
+            if (answer == kPromptCustomTargetKey) {
+                onAnswer(std::string(m_bidInputValue));
+                return;
+            }
+
+            onAnswer(answer);
+        }
+    });
+}
+
+PopupPayload DynamicPopupBox::buildFromPrompt(const PromptRequest& prompt) {
     PopupPayload payload;
-    payload.mode = PopupMode::INFO;
+    const bool isFestivalPrompt = startsWith(prompt.id, "festival_");
+    const bool hasBidOption = std::any_of(prompt.options.begin(), prompt.options.end(), [](const PromptOption& option) {
+        return equalsIgnoreCase(option.key, "BID_MIN") || startsWith(option.key, "BID ");
+    });
+    const bool isAuctionPrompt = startsWith(prompt.id, "lelang_") || hasBidOption;
+    const bool isSkillTargetPrompt = startsWith(prompt.id, "skill_target_");
+    const bool hasTargetSubmitOption = std::any_of(
+        prompt.options.begin(), prompt.options.end(), [](const PromptOption& option) {
+            return equalsIgnoreCase(option.key, "SUBMIT");
+        });
+
+    m_promptWantsBidInput = isAuctionPrompt;
+    m_promptWantsTextInput = isSkillTargetPrompt && hasTargetSubmitOption;
+
+    payload.mode = isFestivalPrompt || isAuctionPrompt || isSkillTargetPrompt
+        ? PopupMode::SPECIAL
+        : PopupMode::INFO;
     payload.headerTitle = prompt.title.empty() ? "PILIHAN" : prompt.title;
     payload.cardTitle = payload.headerTitle;
     payload.description = prompt.message;
 
+    if (isFestivalPrompt) {
+        payload.headerTitle = "FESTIVAL";
+        payload.cardTitle = "PILIH PROPERTI";
+        payload.description = prompt.message + "\nKlik salah satu properti untuk mengaktifkan efek festival.";
+    }
+
+    if (isAuctionPrompt) {
+        payload.headerTitle = "LELANG";
+        payload.cardTitle = "AUCTION BID";
+        payload.description = prompt.message + "\nGunakan PASS/BID MIN atau ketik nominal lalu klik BID ANGKA.";
+        m_bidInputHint.setString("Ketik nominal BID...");
+    }
+
+    if (isSkillTargetPrompt) {
+        payload.headerTitle = prompt.title.empty() ? "TARGET KARTU" : prompt.title;
+        payload.cardTitle = "INPUT TARGET";
+        m_bidInputHint.setString("Ketik ID/KODE target...");
+    }
+
+    bool hasCustomBidAction = false;
+    bool hasCustomTargetAction = false;
+    const int minBidFromId = parseAuctionMinBidFromPromptId(prompt.id);
+
     for (const PromptOption& option : prompt.options) {
+        const std::string key = option.key;
+        std::string label = option.label.empty() ? key : option.label;
+        std::string texturePath = "assets/images/ui/btn_cancel.png";
+
+        if (isFestivalPrompt) {
+            texturePath = "assets/images/ui/btn_beli.png";
+        }
+
+        if (isAuctionPrompt) {
+            if (key == "PASS") {
+                texturePath = "assets/images/ui/btn_cancel.png";
+                label = "PASS";
+            } else {
+                texturePath = "assets/images/ui/btn_beli.png";
+            }
+
+            if (key == "BID_MIN" && minBidFromId > 0) {
+                label = "BID MIN (M" + std::to_string(minBidFromId) + ")";
+            }
+        }
+
+        if (isSkillTargetPrompt) {
+            if (equalsIgnoreCase(key, "SUBMIT")) {
+                payload.actionItems.push_back(PopupActionItem{
+                    std::string(kPromptAnswerPrefix) + kPromptCustomTargetKey,
+                    label.empty() ? "KIRIM TARGET" : label,
+                    "assets/images/ui/btn_beli.png",
+                    true});
+                hasCustomTargetAction = true;
+                continue;
+            }
+
+            if (equalsIgnoreCase(key, "cancel") || equalsIgnoreCase(key, "close")) {
+                texturePath = "assets/images/ui/btn_cancel.png";
+            } else {
+                texturePath = "assets/images/ui/btn_beli.png";
+            }
+        }
+
         payload.actionItems.push_back(PopupActionItem{
-            std::string(kPromptAnswerPrefix) + option.key,
-            option.label.empty() ? option.key : option.label,
-            "assets/images/ui/btn_cancel.png",
+            std::string(kPromptAnswerPrefix) + key,
+            label,
+            texturePath,
+            true});
+
+        if (isAuctionPrompt && key == "BID_MIN" && !hasCustomBidAction) {
+            payload.actionItems.push_back(PopupActionItem{
+                std::string(kPromptAnswerPrefix) + kPromptCustomBidKey,
+                "BID ANGKA",
+                "assets/images/ui/btn_beli.png",
+                true});
+            hasCustomBidAction = true;
+        }
+    }
+
+    if (isSkillTargetPrompt && !hasCustomTargetAction) {
+        payload.actionItems.push_back(PopupActionItem{
+            std::string(kPromptAnswerPrefix) + kPromptCustomTargetKey,
+            "KIRIM TARGET",
+            "assets/images/ui/btn_beli.png",
             true});
     }
 
@@ -292,16 +482,16 @@ void DynamicPopupBox::showPrompt(const PromptRequest& prompt, ActionCallback onA
             PopupActionItem{std::string(kPromptAnswerPrefix), "OK", "assets/images/ui/btn_cancel.png", true});
     }
 
-    show(payload, [onAnswer = std::move(onAnswer)](const std::string& actionId) {
-        if (actionId.rfind(kPromptAnswerPrefix, 0) == 0) {
-            onAnswer(actionId.substr(std::char_traits<char>::length(kPromptAnswerPrefix)));
-        }
-    });
+    return payload;
 }
 
 void DynamicPopupBox::hide() {
     m_isVisible = false;
     m_isMinimized = false;
+    m_promptWantsBidInput = false;
+    m_promptWantsTextInput = false;
+    m_bidInputValue.clear();
+    m_bidInputText.setString("");
     m_pressedActionIndex = -1;
     m_pressedMinimize = false;
     m_pressedShowMenu = false;
@@ -361,6 +551,107 @@ void DynamicPopupBox::update(sf::Vector2f mousePos) {
     }
 
     updateActionVisuals();
+
+    if (m_promptWantsBidInput || m_promptWantsTextInput) {
+        if (m_bidInputBox.getGlobalBounds().contains(mousePos)) {
+            m_bidInputBox.setOutlineColor(sf::Color(226, 188, 102));
+        } else {
+            m_bidInputBox.setOutlineColor(sf::Color(181, 164, 128));
+        }
+    }
+}
+
+bool DynamicPopupBox::handleTextEntered(sf::Uint32 unicode) {
+    if (!m_isVisible || m_isMinimized || (!m_promptWantsBidInput && !m_promptWantsTextInput)) {
+        return false;
+    }
+
+    if (unicode == 8) {
+        if (!m_bidInputValue.empty()) {
+            m_bidInputValue.pop_back();
+        }
+    } else if (m_promptWantsBidInput) {
+        if (unicode >= '0' && unicode <= '9' && m_bidInputValue.size() < 9) {
+            m_bidInputValue.push_back(static_cast<char>(unicode));
+        } else {
+            return false;
+        }
+    } else if (m_promptWantsTextInput) {
+        const char ch = static_cast<char>(unicode);
+        const bool allowed = std::isalnum(static_cast<unsigned char>(ch)) || ch == '_' || ch == '-';
+        if (!allowed) {
+            return false;
+        }
+        if (m_bidInputValue.size() < 16) {
+            m_bidInputValue.push_back(static_cast<char>(std::toupper(static_cast<unsigned char>(ch))));
+        }
+    } else {
+        return false;
+    }
+
+    if (m_bidInputValue.empty()) {
+        m_bidInputText.setString("");
+    } else {
+        if (m_promptWantsBidInput) {
+            m_bidInputText.setString("M" + m_bidInputValue);
+        } else {
+            m_bidInputText.setString(m_bidInputValue);
+        }
+    }
+
+    return true;
+}
+
+bool DynamicPopupBox::handleKeyPressed(sf::Keyboard::Key key) {
+    if (!m_isVisible || m_isMinimized || (!m_promptWantsBidInput && !m_promptWantsTextInput)) {
+        return false;
+    }
+
+    if (key == sf::Keyboard::BackSpace) {
+        if (!m_bidInputValue.empty()) {
+            m_bidInputValue.pop_back();
+            if (m_bidInputValue.empty()) {
+                m_bidInputText.setString("");
+            } else {
+                if (m_promptWantsBidInput) {
+                    m_bidInputText.setString("M" + m_bidInputValue);
+                } else {
+                    m_bidInputText.setString(m_bidInputValue);
+                }
+            }
+        }
+        return true;
+    }
+
+    if (m_promptWantsBidInput &&
+        ((key >= sf::Keyboard::Num0 && key <= sf::Keyboard::Num9) ||
+         (key >= sf::Keyboard::Numpad0 && key <= sf::Keyboard::Numpad9))) {
+        int digit = 0;
+        if (key >= sf::Keyboard::Num0 && key <= sf::Keyboard::Num9) {
+            digit = static_cast<int>(key - sf::Keyboard::Num0);
+        } else {
+            digit = static_cast<int>(key - sf::Keyboard::Numpad0);
+        }
+
+        if (m_bidInputValue.size() < 9) {
+            m_bidInputValue.push_back(static_cast<char>('0' + digit));
+            m_bidInputText.setString("M" + m_bidInputValue);
+        }
+        return true;
+    }
+
+    if (key == sf::Keyboard::Enter || key == sf::Keyboard::Return) {
+        if (!m_bidInputValue.empty()) {
+            if (m_promptWantsBidInput) {
+                invokeAction(std::string(kPromptAnswerPrefix) + kPromptCustomBidKey);
+            } else if (m_promptWantsTextInput) {
+                invokeAction(std::string(kPromptAnswerPrefix) + kPromptCustomTargetKey);
+            }
+        }
+        return true;
+    }
+
+    return false;
 }
 
 bool DynamicPopupBox::handleMousePressed(sf::Vector2f mousePos) {
@@ -489,6 +780,15 @@ void DynamicPopupBox::render(sf::RenderWindow& window) const {
         window.draw(action.label);
     }
 
+    if (m_promptWantsBidInput || m_promptWantsTextInput) {
+        window.draw(m_bidInputBox);
+        if (!m_bidInputValue.empty()) {
+            window.draw(m_bidInputText);
+        } else {
+            window.draw(m_bidInputHint);
+        }
+    }
+
     window.draw(m_minimizeIconSprite);
 }
 
@@ -580,6 +880,12 @@ void DynamicPopupBox::layoutExpanded() {
                                labelBounds.top + labelBounds.height * 0.5f);
         action.label.setPosition(btnX + btnWidth * 0.5f, y + btnHeight * 0.5f - 2.0f);
     }
+
+    m_bidInputBox.setPosition(btnX, popupPos.y + PopupLayout::kButtonsAreaTop + PopupLayout::kButtonsAreaHeight + 8.0f);
+    m_bidInputText.setPosition(btnX + 14.0f,
+                               popupPos.y + PopupLayout::kButtonsAreaTop + PopupLayout::kButtonsAreaHeight + 20.0f);
+    m_bidInputHint.setPosition(btnX + 14.0f,
+                               popupPos.y + PopupLayout::kButtonsAreaTop + PopupLayout::kButtonsAreaHeight + 23.0f);
 
     updateActionVisuals();
 }
@@ -691,9 +997,12 @@ void DynamicPopupBox::updateActionVisuals() {
 
 void DynamicPopupBox::invokeAction(const std::string& actionId) {
     // Copy callback first. Handler may call hide(), which resets m_onAction.
+    appendPopupDebugLog("[DEBUG][PopupInvoke] action=" + actionId);
     ActionCallback callback = m_onAction;
     if (callback) {
-        callback(actionId);
+        // Keep action id stable even if callback mutates popup internals (e.g. hide()).
+        const std::string stableActionId = actionId;
+        callback(stableActionId);
     }
 }
 

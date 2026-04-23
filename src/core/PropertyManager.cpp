@@ -89,13 +89,21 @@ int PropertyManager::computeRent(const Property& prop,
 }
 
 bool PropertyManager::offerPurchase(Player& buyer, Property& prop) {
-    const int price = prop.getPurchasePrice();
+    const int basePrice = prop.getPurchasePrice();
+    const int discountPercent = std::clamp(buyer.getDiscountPercent(), 0, 100);
+    const bool hasDiscount = discountPercent > 0;
+    const int discountedPrice =
+        hasDiscount ? std::max(0, basePrice - ((basePrice * discountPercent) / 100)) : basePrice;
+    const int price = discountedPrice;
     const std::string promptKey = "beli_" + prop.getCode();
 
     if (!engine.hasPromptAnswer(promptKey)) {
         std::ostringstream info;
         // Akta isn't fully drawn here in original either, let's keep it close but with exact words
         info << "Uang kamu saat ini: M" << buyer.getMoney();
+        if (hasDiscount) {
+            info << "\nDiscount aktif: " << discountPercent << "% (harga jadi M" << price << ")";
+        }
         engine.pushEvent(GameEventType::PROPERTY, UiTone::INFO,
             "Mendarat di " + prop.getCode(), info.str());
     }
@@ -107,9 +115,17 @@ bool PropertyManager::offerPurchase(Player& buyer, Property& prop) {
     }
 
     if (!engine.hasPromptAnswer(promptKey)) {
+        std::ostringstream prompt;
+        if (hasDiscount) {
+            prompt << "Harga normal M" << basePrice << ", discount " << discountPercent
+                   << "% -> M" << price
+                   << ". Apakah kamu ingin membeli properti ini? (y/n):";
+        } else {
+            prompt << "Apakah kamu ingin membeli properti ini seharga M" << price << "? (y/n):";
+        }
         engine.pushPrompt(
             promptKey,
-            "Apakah kamu ingin membeli properti ini seharga M" + std::to_string(price) + "? (y/n):",
+            prompt.str(),
             {"y", "n"});
         engine.setPendingContinuation([this, &buyer, &prop]() {
             CommandResult resumed;
@@ -131,10 +147,17 @@ bool PropertyManager::offerPurchase(Player& buyer, Property& prop) {
     bank.receivePayment(buyer, price);
     bank.transferPropertyToPlayer(&prop, buyer);
     logger.logBuy(buyer.getUsername(), prop.getName(), prop.getCode(), price);
+    std::ostringstream successMessage;
+    successMessage << prop.getName() << " kini menjadi milikmu!\n";
+    if (hasDiscount) {
+        successMessage << "Harga normal: M" << basePrice
+                       << " | Discount " << discountPercent
+                       << "% | Dibayar: M" << price << "\n";
+    }
+    successMessage << "Uang tersisa: M" << buyer.getMoney();
     engine.pushEvent(GameEventType::PROPERTY, UiTone::SUCCESS,
         "Beli Properti",
-        prop.getName() + " kini menjadi milikmu!\nUang tersisa: M" +
-        std::to_string(buyer.getMoney()));
+        successMessage.str());
     return true;
 }
 
@@ -392,6 +415,44 @@ bool PropertyManager::buildOnProperty(Player& player, StreetProperty& prop) {
             "Uang kamu saat ini: M" + std::to_string(player.getMoney()));
     }
     return true;
+}
+
+PropertyManager::BuildOption PropertyManager::getBuildOption(
+    const Player& player, const StreetProperty& prop) const {
+    if (prop.getOwner() != &player) {
+        return BuildOption::NONE;
+    }
+
+    if (!hasMonopoly(player, prop.getColorGroup())) {
+        return BuildOption::NONE;
+    }
+
+    if (prop.getBuildingLevel() == BuildingLevel::HOTEL) {
+        return BuildOption::NONE;
+    }
+
+    const std::vector<StreetProperty*> buildableTiles =
+        getBuildableTilesInGroup(player, prop.getColorGroup());
+    const bool tileIsEligible = std::any_of(
+        buildableTiles.begin(), buildableTiles.end(), [&prop](const StreetProperty* candidate) {
+            return candidate != nullptr && candidate->getCode() == prop.getCode();
+        });
+
+    if (!tileIsEligible) {
+        return BuildOption::NONE;
+    }
+
+    if (prop.getBuildingLevel() == BuildingLevel::HOUSE_4) {
+        for (const StreetProperty* tile : getColorGroup(prop.getColorGroup())) {
+            if (tile == nullptr || tile->getOwner() != &player ||
+                tile->getBuildingLevel() != BuildingLevel::HOUSE_4) {
+                return BuildOption::NONE;
+            }
+        }
+        return BuildOption::HOTEL;
+    }
+
+    return BuildOption::HOUSE;
 }
 
 void PropertyManager::sellPropertyToBank(Player& player, Property& prop) {

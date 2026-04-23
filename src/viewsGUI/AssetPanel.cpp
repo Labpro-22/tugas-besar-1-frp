@@ -73,6 +73,7 @@ AssetPanel::AssetPanel(const sf::Font& titleFont, const sf::Font& bodyFont)
       m_hasCardTemplateSprite(false),
       m_hasScrollbarAssets(false),
       m_mode(Mode::ASSET),
+      m_currentPlayerName(""),
       m_scrollOffset(0.0f),
       m_maxScrollOffset(0.0f),
       m_draggingScrollbar(false),
@@ -82,6 +83,7 @@ AssetPanel::AssetPanel(const sf::Font& titleFont, const sf::Font& bodyFont)
     m_titleText.setFont(m_titleFont);
     m_titleText.setCharacterSize(68);
     m_titleText.setFillColor(sf::Color(240, 239, 229));
+    refreshPanelTitle();
 }
 
 bool AssetPanel::loadAssets(const std::string& uiDir, const std::string& boardDir) {
@@ -190,14 +192,7 @@ void AssetPanel::setMode(Mode mode) {
     m_mode = mode;
     m_scrollOffset = 0.0f;
     m_pressedItemIndex = -1;
-
-    if (m_mode == Mode::ASSET) {
-        m_titleText.setString("ASSET");
-    } else if (m_mode == Mode::INVENTORY) {
-        m_titleText.setString("INVENTORY");
-    } else {
-        m_titleText.setString("LOG");
-    }
+    refreshPanelTitle();
 
     clampScroll();
     updateScrollVisual();
@@ -317,6 +312,9 @@ int AssetPanel::itemIndexAt(sf::Vector2f mousePos) const {
 }
 
 void AssetPanel::updateData(const Player& currentPlayer, const std::string& systemLog) {
+    m_currentPlayerName = currentPlayer.getUsername();
+    refreshPanelTitle();
+
     m_assetItems.clear();
     const auto& owned = currentPlayer.getOwnedProperties();
     for (const Property* property : owned) {
@@ -354,6 +352,21 @@ void AssetPanel::updateData(const Player& currentPlayer, const std::string& syst
 
     clampScroll();
     updateScrollVisual();
+}
+
+void AssetPanel::refreshPanelTitle() {
+    if (m_mode == Mode::LOG) {
+        m_titleText.setString("LOG");
+        return;
+    }
+
+    const std::string owner = m_currentPlayerName.empty() ? "Player" : m_currentPlayerName;
+    if (m_mode == Mode::ASSET) {
+        m_titleText.setString(owner + "'s Asset");
+        return;
+    }
+
+    m_titleText.setString(owner + "'s Inventory");
 }
 
 void AssetPanel::update(sf::Vector2f mousePos) {

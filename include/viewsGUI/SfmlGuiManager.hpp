@@ -4,6 +4,7 @@
 #include <SFML/Graphics.hpp>
 
 #include <deque>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <string>
@@ -20,7 +21,7 @@ class GameEngine;
 class Property;
 
 namespace viewsGUI {
-enum class GuiState { IDLE, ANIMATING, WAITING_CONFIRMATION };
+enum class GuiState { IDLE, ANIMATING_DICE, ANIMATING_PIECE, WAITING_CONFIRMATION };
 
 class SfmlGuiManager {
 public:
@@ -45,6 +46,8 @@ private:
     std::string m_lastMessage;
     std::deque<PromptRequest> m_pendingPrompts;
     std::optional<MovementPayload> m_deferredMovement;
+    std::string m_preTurnSkillGateKey;
+    bool m_preTurnSkillHandled;
 
     void processEvents();
     void update(sf::Time dt);
@@ -62,6 +65,8 @@ private:
     void beginMovementAnimation(const MovementPayload& movement);
     void enqueuePrompts(const std::vector<PromptRequest>& prompts);
     void processNextPrompt();
+    std::string buildCurrentTurnGateKey() const;
+    void maybeShowPreTurnSkillPopup();
 
     void consumeResult(const CommandResult& result, bool syncPiecePositions);
     void showLandingPopup(const MovementPayload& movement);
@@ -69,6 +74,7 @@ private:
     PopupPayload buildLandingPayload(const MovementPayload& movement) const;
     std::vector<int> buildDummyRentRows(const Property& property) const;
     sf::Color resolvePropertyColor(const Property& property) const;
+    void showBackendErrorPopup(const std::string& message, std::function<void()> onOk = {});
     void resumeFlowAfterPopup();
 };
 } // namespace viewsGUI

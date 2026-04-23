@@ -49,6 +49,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <unordered_map>
+#include <unordered_set>
 
 using namespace std;
 
@@ -120,6 +121,92 @@ string toOwnershipStatusString(OwnershipStatus status) {
     case OwnershipStatus::MORTGAGED: return "MORTGAGED";
     }
     throw SaveLoadException("Status properti enum tidak dikenali");
+}
+
+std::string trimCopy(const std::string& value) {
+    const size_t start = value.find_first_not_of(" \t\r\n");
+    if (start == std::string::npos) {
+        return "";
+    }
+    const size_t end = value.find_last_not_of(" \t\r\n");
+    return value.substr(start, end - start + 1);
+}
+
+std::string upperCopyText(std::string value) {
+    std::transform(value.begin(), value.end(), value.begin(),
+        [](unsigned char c) { return static_cast<char>(std::toupper(c)); });
+    return value;
+}
+
+bool isDigitsOnly(const std::string& value) {
+    if (value.empty()) {
+        return false;
+    }
+    return std::all_of(value.begin(), value.end(),
+        [](unsigned char c) { return std::isdigit(c) != 0; });
+}
+
+struct SkillTargetCatalog {
+    std::unordered_map<int, std::string> anyTileIdToCode;
+    std::unordered_set<std::string> anyTileCodes;
+    std::unordered_map<int, std::string> propertyIdToCode;
+    std::unordered_set<std::string> propertyCodes;
+};
+
+SkillTargetCatalog loadSkillTargetCatalogFromConfig() {
+    ConfigLoader loader;
+    const std::vector<PropertyDef> propertyDefs = loader.loadProperties("config/property.txt");
+    const std::vector<ActionTileDef> actionDefs = loader.loadActionTiles("config/aksi.txt");
+
+    SkillTargetCatalog catalog;
+    for (const PropertyDef& def : propertyDefs) {
+        const std::string code = upperCopyText(def.getCode());
+        catalog.propertyIdToCode[def.getId()] = code;
+        catalog.propertyCodes.insert(code);
+        catalog.anyTileIdToCode[def.getId()] = code;
+        catalog.anyTileCodes.insert(code);
+    }
+
+    for (const ActionTileDef& def : actionDefs) {
+        const std::string code = upperCopyText(def.getCode());
+        catalog.anyTileIdToCode[def.getId()] = code;
+        catalog.anyTileCodes.insert(code);
+    }
+
+    return catalog;
+}
+
+std::string normalizeTileTargetByConfig(const std::string& rawTarget,
+                                        const std::unordered_map<int, std::string>& idToCode,
+                                        const std::unordered_set<std::string>& validCodes,
+                                        const std::string& sourceLabel) {
+    const std::string trimmed = trimCopy(rawTarget);
+    if (trimmed.empty()) {
+        throw GameException("TARGET tidak boleh kosong.");
+    }
+
+    if (isDigitsOnly(trimmed)) {
+        int targetId = 0;
+        try {
+            targetId = std::stoi(trimmed);
+        } catch (const std::exception&) {
+            throw GameException("TARGET ID tidak valid: " + trimmed + ".");
+        }
+
+        auto it = idToCode.find(targetId);
+        if (it == idToCode.end()) {
+            throw GameException(
+                "TARGET ID '" + trimmed + "' tidak ditemukan pada " + sourceLabel + ".");
+        }
+        return it->second;
+    }
+
+    const std::string targetCode = upperCopyText(trimmed);
+    if (validCodes.find(targetCode) == validCodes.end()) {
+        throw GameException(
+            "TARGET kode '" + targetCode + "' tidak ditemukan pada " + sourceLabel + ".");
+    }
+    return targetCode;
 }
 } // namespace
 
@@ -1039,25 +1126,148 @@ CommandResult GameEngine::processCommand(const Command& cmd) {
             target = cmd.args[1];
         }
 
-        // Validasi target untuk kartu yang butuh target
-        if ((cardType == "TeleportCard" || cardType == "LassoCard" ||
-             cardType == "DemolitionCard") && target.empty()) {
-            std::ostringstream hint;
-            hint << "Kartu " << cardType << " membutuhkan TARGET.\n";
-            if (cardType == "TeleportCard") {
-                hint << "Contoh: GUNAKAN_KEMAMPUAN " << (idx + 1) << " JKT";
-                hint << "\n(masukkan kode petak tujuan)";
-            } else if (cardType == "LassoCard") {
-                hint << "Contoh: GUNAKAN_KEMAMPUAN " << (idx + 1) << " NamaLawan";
-                hint << "\n(masukkan username pemain lawan di depan kamu)";
-            } else {
-                hint << "Contoh: GUNAKAN_KEMAMPUAN " << (idx + 1) << " BDG";
-                hint << "\n(masukkan kode properti lawan yang ingin dihancurkan)";
+        const bool needsTarget = (cardType == "TeleportCard" || cardType == "LassoCard" ||
+                                  cardType == "DemolitionCard");
+
+        if (needsTarget && trimCopy(target).empty()) {
+            const std::string promptKey =
+                "skill_target_" + current.getUsername() + "_" + std::to_string(idx + 1);
+            if (!hasPromptAnswer(promptKey)) {
+                PromptRequest prompt;
+                prompt.id = promptKey;
+                prompt.title = "TARGET KARTU";
+
+                std::ostringstream message;
+                if (cardType == "TeleportCard") {
+                    message << "TeleportCard membutuhkan TARGET.\n"
+                            << "Masukkan ID atau KODE petak tujuan.\n"
+                            << "Referensi target valid: config/property.txt + config/aksi.txt.\n"
+                            << "Contoh: 1 atau GO, 38 atau JKT.";
+                    prompt.options.push_back(PromptOption{"SUBMIT", "Kirim Target"});
+                    prompt.options.push_back(PromptOption{"cancel", "Batal"});
+                } else if (cardType == "DemolitionCard") {
+                    message << "DemolitionCard membutuhkan TARGET.\n"
+                            << "Masukkan ID atau KODE properti lawan.\n"
+                            << "Referensi target valid: config/property.txt.\n"
+                            << "Contoh: 32 atau BDG.";
+                    prompt.options.push_back(PromptOption{"SUBMIT", "Kirim Target"});
+                    prompt.options.push_back(PromptOption{"cancel", "Batal"});
+                } else {
+                    message << "LassoCard: pilih pemain lawan yang berada di depanmu "
+                            << "(jarak 1-12 petak).";
+
+                    Board& boardRef = getBoard();
+                    const int currentPos = current.getPosition();
+                    std::vector<Player*> candidates;
+                    for (Player* candidate : getActivePlayers()) {
+                        if (!candidate || candidate == &current) {
+                            continue;
+                        }
+                        if (candidate->isBankrupt() || candidate->isJailed()) {
+                            continue;
+                        }
+
+                        const int dist = boardRef.distanceTo(currentPos, candidate->getPosition());
+                        if (dist > 0 && dist <= 12) {
+                            candidates.push_back(candidate);
+                        }
+                    }
+
+                    if (candidates.empty()) {
+                        result.addEvent(GameEventType::CARD, UiTone::WARNING,
+                                        "Target Tidak Ada",
+                                        "Tidak ada pemain lawan valid di depanmu "
+                                        "(jarak 1-12 petak).");
+                        result.success = false;
+                        return finalizeResult();
+                    }
+
+                    for (Player* candidate : candidates) {
+                        const int dist = boardRef.distanceTo(currentPos, candidate->getPosition());
+                        std::ostringstream label;
+                        label << candidate->getUsername()
+                              << " (jarak " << dist << " petak)";
+                        prompt.options.push_back(PromptOption{
+                            candidate->getUsername(),
+                            label.str()});
+                    }
+                    prompt.options.push_back(PromptOption{"cancel", "Batal"});
+                }
+
+                prompt.message = message.str();
+                pushPrompt(prompt);
+
+                setPendingContinuation([this, promptKey, idx]() {
+                    CommandResult resumed;
+                    if (!hasPromptAnswer(promptKey)) {
+                        return resumed;
+                    }
+
+                    const std::string answer = consumePromptAnswer(promptKey);
+                    const std::string normalizedAnswer = upperCopyText(trimCopy(answer));
+                    if (normalizedAnswer.empty() || normalizedAnswer == "CANCEL" ||
+                        normalizedAnswer == "CLOSE") {
+                        resumed.addEvent(GameEventType::CARD, UiTone::INFO,
+                                         "Batal", "Batal menggunakan kartu kemampuan.");
+                        return resumed;
+                    }
+
+                    Command followUp;
+                    followUp.type = CommandType::USE_SKILL;
+                    followUp.raw = "GUNAKAN_KEMAMPUAN " + std::to_string(idx + 1) + " " + answer;
+                    followUp.args = {std::to_string(idx + 1), answer};
+                    resumed.append(processCommand(followUp));
+                    return resumed;
+                });
+
+                return finalizeResult();
             }
-            result.addEvent(GameEventType::CARD, UiTone::WARNING,
-                "Target Diperlukan", hint.str());
-            result.success = false;
-            return finalizeResult();
+
+            target = consumePromptAnswer(promptKey);
+        }
+
+        if (needsTarget) {
+            target = trimCopy(target);
+            if (target.empty()) {
+                result.addEvent(GameEventType::CARD, UiTone::INFO,
+                                "Batal", "Batal menggunakan kartu kemampuan.");
+                return finalizeResult();
+            }
+
+            if (cardType == "TeleportCard" || cardType == "DemolitionCard") {
+                const SkillTargetCatalog catalog = loadSkillTargetCatalogFromConfig();
+                if (cardType == "TeleportCard") {
+                    target = normalizeTileTargetByConfig(
+                        target,
+                        catalog.anyTileIdToCode,
+                        catalog.anyTileCodes,
+                        "config/property.txt dan config/aksi.txt");
+                } else {
+                    target = normalizeTileTargetByConfig(
+                        target,
+                        catalog.propertyIdToCode,
+                        catalog.propertyCodes,
+                        "config/property.txt");
+                }
+            } else if (cardType == "LassoCard") {
+                Player* targetPlayer = getPlayerByName(target);
+                if (!targetPlayer) {
+                    const std::string upperTarget = upperCopyText(target);
+                    for (Player* player : players) {
+                        if (!player) {
+                            continue;
+                        }
+                        if (upperCopyText(player->getUsername()) == upperTarget) {
+                            targetPlayer = player;
+                            break;
+                        }
+                    }
+                }
+                if (!targetPlayer) {
+                    throw GameException("TARGET pemain '" + target + "' tidak ditemukan.");
+                }
+                target = targetPlayer->getUsername();
+            }
         }
 
         turnActionTaken = true;

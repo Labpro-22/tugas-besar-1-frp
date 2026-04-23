@@ -15,6 +15,8 @@ const sf::Vector2f kPanelPos(1070.0f, 450.0f);
 
 const sf::Vector2f kTurnBadgePos(420.0f, 600.0f);
 const sf::Vector2f kRollBtnPos(420.0f, 655.0f);
+const sf::Vector2f kTurnStatusPos(570.0f, 660.0f);
+constexpr unsigned int kTurnStatusCharSize = 40;
 
 const sf::Vector2f kTabAssetPos(84.0f, 988.0f);
 const sf::Vector2f kTabLogPos(400.0f, 988.0f);

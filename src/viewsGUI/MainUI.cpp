@@ -39,6 +39,18 @@ bool MainUI::loadAssets(const std::string& uiDir, const std::string& boardDir) {
     }
     m_rollDiceButton.setPosition(Layout1920::kRollBtnPos);
 
+    m_turnStatusText.setFont(m_titleFont);
+    m_turnStatusText.setCharacterSize(Layout1920::kTurnStatusCharSize);
+    m_turnStatusText.setFillColor(sf::Color(246, 236, 210));
+    m_turnStatusText.setOutlineColor(sf::Color(49, 38, 24));
+    m_turnStatusText.setOutlineThickness(2.0f);
+    m_turnStatusText.setString("P1's Turn");
+    {
+        const sf::FloatRect bounds = m_turnStatusText.getLocalBounds();
+        m_turnStatusText.setOrigin(bounds.left + (bounds.width * 0.5f), bounds.top);
+        m_turnStatusText.setPosition(Layout1920::kTurnStatusPos);
+    }
+
     if (!m_tabAsset.loadTextures(baseUi + "tab_asset_normal.png",
                                  baseUi + "tab_asset_normal.png",
                                  baseUi + "tab_asset_active.png",
@@ -117,6 +129,10 @@ void MainUI::updateData(const std::vector<Player*>& players,
                         const std::string& systemLog) {
     m_leaderboardView.updateFromPlayers(players);
     m_assetPanel.updateData(currentPlayer, systemLog);
+    m_turnStatusText.setString(currentPlayer.getUsername() + "'s Turn");
+    const sf::FloatRect bounds = m_turnStatusText.getLocalBounds();
+    m_turnStatusText.setOrigin(bounds.left + (bounds.width * 0.5f), bounds.top);
+    m_turnStatusText.setPosition(Layout1920::kTurnStatusPos);
 }
 
 void MainUI::update(sf::Vector2f mousePos) {
@@ -195,6 +211,7 @@ void MainUI::renderOverlay(sf::RenderWindow& window) const {
 
     if (m_rollVisible) {
         m_rollDiceButton.render(window);
+        window.draw(m_turnStatusText);
     }
 }
 } // namespace viewsGUI

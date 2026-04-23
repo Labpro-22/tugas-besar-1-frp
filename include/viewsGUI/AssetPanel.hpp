@@ -84,6 +84,7 @@ private:
     std::vector<AssetItem> m_assetItems;
     std::vector<InventoryItem> m_inventoryItems;
     std::string m_systemLog;
+    std::string m_currentPlayerName;
 
     float m_scrollOffset;
     float m_maxScrollOffset;
@@ -113,6 +114,7 @@ private:
     int itemIndexAt(sf::Vector2f mousePos) const;
 
     void openDetailForItem(int index);
+    void refreshPanelTitle();
 
     void loadPropertyBannerDirectory(const std::string& directoryPath);
 

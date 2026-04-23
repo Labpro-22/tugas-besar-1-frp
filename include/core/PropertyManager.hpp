@@ -29,6 +29,12 @@ private:
     int  computeRent(const Property& prop,const GameContext& ctx) const;
 
 public:
+    enum class BuildOption {
+        NONE,
+        HOUSE,
+        HOTEL
+    };
+
     PropertyManager(GameEngine& engine, Bank& bank, TransactionLogger& logger);
 
     bool offerPurchase(Player& buyer, Property& prop);
@@ -37,6 +43,7 @@ public:
     bool mortgageProperty(Player& player, Property& prop);
     bool redeemProperty(Player& player, Property& prop);
     bool buildOnProperty(Player& player, StreetProperty& prop);
+    BuildOption getBuildOption(const Player& player, const StreetProperty& prop) const;
     void sellPropertyToBank(Player& player, Property& prop);
 
 

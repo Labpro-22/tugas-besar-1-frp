@@ -26,6 +26,7 @@ private:
         int cash;
         int assets;
         int total;
+        int tokenIndex;
     };
 
     sf::Font m_headerFont;
@@ -33,6 +34,7 @@ private:
 
     sf::Texture m_panelTexture;
     sf::Sprite m_panelSprite;
+    std::vector<sf::Texture> m_tokenTextures;
 
     std::vector<Row> m_rows;
 

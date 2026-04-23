@@ -64,6 +64,8 @@ public:
     bool isMinimized() const { return m_isMinimized; }
 
     void update(sf::Vector2f mousePos);
+    bool handleTextEntered(sf::Uint32 unicode);
+    bool handleKeyPressed(sf::Keyboard::Key key);
     bool handleMousePressed(sf::Vector2f mousePos);
     bool handleMouseReleased(sf::Vector2f mousePos);
     void render(sf::RenderWindow& window) const;
@@ -108,8 +110,15 @@ private:
     std::vector<sf::Text> m_rentTexts;
     sf::Text m_descriptionText;
     sf::Text m_showMenuText;
+    sf::RectangleShape m_bidInputBox;
+    sf::Text m_bidInputText;
+    sf::Text m_bidInputHint;
 
     std::vector<SpriteAction> m_actionSprites;
+
+    bool m_promptWantsBidInput;
+    bool m_promptWantsTextInput;
+    std::string m_bidInputValue;
 
     int m_pressedActionIndex;
     bool m_pressedMinimize;
@@ -122,6 +131,7 @@ private:
 
     void layoutExpanded();
     void layoutMinimized();
+    PopupPayload buildFromPrompt(const PromptRequest& prompt);
     void rebuildCardTexts();
     void rebuildActionSprites();
     void updateActionVisuals();
