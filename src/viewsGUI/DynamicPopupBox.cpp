@@ -58,18 +58,18 @@ struct PopupLayout {
     static constexpr float kPopupWidth = 900.0f;
     static constexpr float kPopupHeight = 843.14f;
 
-    static constexpr float kHeaderTop = 22.0f;
+    static constexpr float kHeaderTop = 80.0f;
 
     static constexpr float kCardOffsetX = 42.0f;
-    static constexpr float kCardOffsetY = 124.0f;
+    static constexpr float kCardOffsetY = 260.0f;
     static constexpr float kCardWidth = 542.0f;
-    static constexpr float kCardHeight = 680.0f;
-    static constexpr float kCardTextPaddingX = 28.0f;
+    static constexpr float kCardHeight = 520.0f;
+    static constexpr float kCardTextPaddingX = 50.0f;
     static constexpr float kCardTextMaxWidth = kCardWidth - (2.0f * kCardTextPaddingX);
 
-    static constexpr float kRibbonMarginX = 20.0f;
-    static constexpr float kRibbonTop = 24.0f;
-    static constexpr float kRibbonHeight = 34.0f;
+    static constexpr float kRibbonMarginX = 21.0f;
+    static constexpr float kRibbonTop = 15.0f;
+    static constexpr float kRibbonHeight = 50.0f;
 
     static constexpr float kPropertyTitleY = 72.0f;
     static constexpr float kPropertyPriceY = 150.0f;

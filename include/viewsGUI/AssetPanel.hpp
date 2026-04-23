@@ -6,6 +6,7 @@
 #include <memory>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 class Player;
@@ -55,6 +56,7 @@ private:
         std::string description;
         int value;
         int duration;
+        std::string thumbnailKey;
     };
 
     sf::Font m_titleFont;
@@ -62,7 +64,7 @@ private:
 
     sf::Texture m_panelAssetTexture;
     sf::Texture m_panelLogTexture;
-    sf::Texture m_cardTemplateTexture;
+    mutable sf::Texture m_cardTemplateTexture;
     sf::Texture m_scrollTrackTexture;
     sf::Texture m_scrollThumbTexture;
 
@@ -74,17 +76,22 @@ private:
     sf::Text m_titleText;
 
     std::unordered_map<std::string, sf::Texture> m_propertyBannerTextures;
+    std::unordered_map<std::string, sf::Texture> m_inventoryThumbnailTextures;
+    std::unordered_set<std::string> m_missingInventoryThumbnailKeys;
 
     sf::Vector2f m_position;
     sf::Vector2f m_panelSize;
-    bool m_hasCardTemplateSprite;
+    mutable bool m_hasCardTemplateSprite;
+    mutable bool m_detailTemplateLoadAttempted;
     bool m_hasScrollbarAssets;
+    std::string m_uiAssetBaseDir;
 
     Mode m_mode;
     std::vector<AssetItem> m_assetItems;
     std::vector<InventoryItem> m_inventoryItems;
     std::string m_systemLog;
     std::string m_currentPlayerName;
+    int m_assetTotalValue;
 
     float m_scrollOffset;
     float m_maxScrollOffset;
@@ -117,6 +124,7 @@ private:
     void refreshPanelTitle();
 
     void loadPropertyBannerDirectory(const std::string& directoryPath);
+    void ensureInventoryThumbnailLoaded(const std::string& key);
 
     void renderAssetOrInventory(sf::RenderWindow& window) const;
     void renderLog(sf::RenderWindow& window) const;

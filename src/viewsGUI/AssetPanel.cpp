@@ -4,8 +4,10 @@
 #include "../../include/models/Property.hpp"
 #include "../../include/models/SkillCard.hpp"
 #include "../../include/models/StreetProperty.hpp"
+#include "../../include/viewsGUI/Theme.hpp"
 
 #include <algorithm>
+#include <cctype>
 #include <filesystem>
 #include <iostream>
 #include <sstream>
@@ -63,6 +65,126 @@ std::string wrapTextByWord(const std::string& text, std::size_t maxCharsPerLine)
 
     return wrapped;
 }
+
+std::string toOwnershipStatusText(const Property& property) {
+    if (property.isMortgaged()) {
+        return "MORTGAGED [M]";
+    }
+    if (property.isOwned()) {
+        return "OWNED";
+    }
+    return "BANK";
+}
+
+std::string camelCaseToSnakeCase(const std::string& value) {
+    std::string out;
+    out.reserve(value.size() + 8);
+
+    for (size_t i = 0; i < value.size(); ++i) {
+        const unsigned char uc = static_cast<unsigned char>(value[i]);
+        const bool isUpper = std::isupper(uc) != 0;
+        if (isUpper && i > 0) {
+            const unsigned char prev = static_cast<unsigned char>(value[i - 1]);
+            const bool prevIsLowerOrDigit = (std::islower(prev) != 0) || (std::isdigit(prev) != 0);
+            const bool nextIsLower =
+                (i + 1 < value.size()) && (std::islower(static_cast<unsigned char>(value[i + 1])) != 0);
+            if (prevIsLowerOrDigit || nextIsLower) {
+                out.push_back('_');
+            }
+        }
+        out.push_back(static_cast<char>(std::tolower(uc)));
+    }
+
+    return out;
+}
+
+sf::Color resolveStreetColor(const std::string& colorGroup) {
+    if (colorGroup == "COKLAT" || colorGroup == "CK") return Theme::Coklat;
+    if (colorGroup == "BIRU_MUDA" || colorGroup == "BM") return Theme::BiruMuda;
+    if (colorGroup == "MERAH_MUDA" || colorGroup == "PK") return Theme::Pink;
+    if (colorGroup == "ORANGE" || colorGroup == "OR") return Theme::Oranye;
+    if (colorGroup == "MERAH" || colorGroup == "MR") return Theme::Merah;
+    if (colorGroup == "KUNING" || colorGroup == "KN") return Theme::Kuning;
+    if (colorGroup == "HIJAU" || colorGroup == "HJ") return Theme::Hijau;
+    if (colorGroup == "BIRU_TUA" || colorGroup == "BT") return Theme::BiruTua;
+    return sf::Color::Transparent;
+}
+
+void fitTextToMaxWidth(sf::Text& text, float maxWidth, unsigned int minCharacterSize = 9U) {
+    if (maxWidth <= 0.0f) {
+        return;
+    }
+
+    text.setScale(1.0f, 1.0f);
+    unsigned int charSize = text.getCharacterSize();
+    if (charSize == 0U) {
+        return;
+    }
+
+    while (charSize > minCharacterSize && text.getLocalBounds().width > maxWidth) {
+        --charSize;
+        text.setCharacterSize(charSize);
+    }
+
+    const float widthAfterResize = text.getLocalBounds().width;
+    if (widthAfterResize > maxWidth && widthAfterResize > 0.0f) {
+        const float uniformScale = maxWidth / widthAfterResize;
+        text.setScale(uniformScale, uniformScale);
+    }
+}
+
+const sf::Texture* resolvePropertyTexture(const Property* property,
+                                          const std::string& code,
+                                          const std::unordered_map<std::string, sf::Texture>& textures) {
+    if (!property) {
+        return nullptr;
+    }
+
+    if (property->getType() == PropertyType::RAILROAD) {
+        auto itRail = textures.find("RAILROAD");
+        if (itRail != textures.end()) {
+            return &itRail->second;
+        }
+    }
+
+    auto itExact = textures.find(code);
+    if (itExact != textures.end()) {
+        return &itExact->second;
+    }
+
+    return nullptr;
+}
+
+std::string toBuildingText(const Property* property) {
+    const auto* street = dynamic_cast<const StreetProperty*>(property);
+    if (!street) {
+        return "";
+    }
+
+    if (street->getBuildingLevel() == BuildingLevel::HOTEL) {
+        return "Hotel";
+    }
+
+    const int buildingCount = street->getBuildingCount();
+    if (buildingCount <= 0) {
+        return "";
+    }
+    return std::to_string(buildingCount) + " rumah";
+}
+
+std::string toRailroadTwoLines(std::string rawName) {
+    std::replace(rawName.begin(), rawName.end(), '_', ' ');
+    const std::string prefix = "STASIUN ";
+    if (rawName.rfind(prefix, 0) == 0 && rawName.size() > prefix.size()) {
+        return "STASIUN\n" + rawName.substr(prefix.size());
+    }
+    return rawName;
+}
+
+std::string toStreetDisplayName(std::string rawName) {
+    std::replace(rawName.begin(), rawName.end(), '_', ' ');
+    return rawName;
+}
 } // namespace
 
 AssetPanel::AssetPanel(const sf::Font& titleFont, const sf::Font& bodyFont)
@@ -71,9 +193,12 @@ AssetPanel::AssetPanel(const sf::Font& titleFont, const sf::Font& bodyFont)
       m_position(0.0f, 0.0f),
       m_panelSize(820.0f, 548.0f),
       m_hasCardTemplateSprite(false),
+      m_detailTemplateLoadAttempted(false),
       m_hasScrollbarAssets(false),
+      m_uiAssetBaseDir(""),
       m_mode(Mode::ASSET),
       m_currentPlayerName(""),
+      m_assetTotalValue(0),
       m_scrollOffset(0.0f),
       m_maxScrollOffset(0.0f),
       m_draggingScrollbar(false),
@@ -91,6 +216,11 @@ bool AssetPanel::loadAssets(const std::string& uiDir, const std::string& boardDi
 
     const std::string baseUi = (!uiDir.empty() && uiDir.back() == '/') ? uiDir : uiDir + "/";
     const std::string baseBoard = (!boardDir.empty() && boardDir.back() == '/') ? boardDir : boardDir + "/";
+    m_uiAssetBaseDir = baseUi;
+    m_hasCardTemplateSprite = false;
+    m_detailTemplateLoadAttempted = false;
+    m_inventoryThumbnailTextures.clear();
+    m_missingInventoryThumbnailKeys.clear();
 
     if (!m_panelAssetTexture.loadFromFile(baseUi + "panel_assets_inventory.png")) {
         std::cerr << "[ERROR] Gagal memuat panel assets/inventory.\n";
@@ -98,10 +228,6 @@ bool AssetPanel::loadAssets(const std::string& uiDir, const std::string& boardDi
     }
     if (!m_panelLogTexture.loadFromFile(baseUi + "panel_log.png")) {
         std::cerr << "[ERROR] Gagal memuat panel log.\n";
-        success = false;
-    }
-    if (!m_cardTemplateTexture.loadFromFile(baseUi + "asset_card_template.png")) {
-        std::cerr << "[ERROR] Gagal memuat template card asset.\n";
         success = false;
     }
     if (!m_scrollTrackTexture.loadFromFile(baseUi + "asset_scroll_track.png")) {
@@ -115,9 +241,6 @@ bool AssetPanel::loadAssets(const std::string& uiDir, const std::string& boardDi
     m_panelLogSprite.setTexture(m_panelLogTexture);
     m_scrollTrackSprite.setTexture(m_scrollTrackTexture);
     m_scrollThumbSprite.setTexture(m_scrollThumbTexture);
-
-    const sf::Vector2u cardSize = m_cardTemplateTexture.getSize();
-    m_hasCardTemplateSprite = (cardSize.x > 8 && cardSize.y > 8);
 
     const sf::Vector2u trackSize = m_scrollTrackTexture.getSize();
     const sf::Vector2u thumbSize = m_scrollThumbTexture.getSize();
@@ -313,6 +436,7 @@ int AssetPanel::itemIndexAt(sf::Vector2f mousePos) const {
 
 void AssetPanel::updateData(const Player& currentPlayer, const std::string& systemLog) {
     m_currentPlayerName = currentPlayer.getUsername();
+    m_assetTotalValue = 0;
     refreshPanelTitle();
 
     m_assetItems.clear();
@@ -322,14 +446,19 @@ void AssetPanel::updateData(const Player& currentPlayer, const std::string& syst
             continue;
         }
 
+        m_assetTotalValue += property->getPurchasePrice();
+
         int buildingCount = 0;
+        std::string displayName = property->getName();
         if (const auto* street = dynamic_cast<const StreetProperty*>(property)) {
             buildingCount = street->getBuildingCount();
+            m_assetTotalValue += street->getBuildingSellValue() * 2;
+            displayName = toStreetDisplayName(displayName);
         }
 
         m_assetItems.push_back(AssetItem{property,
                                          property->getCode(),
-                                         property->getName(),
+                                         displayName,
                                          property->getPurchasePrice(),
                                          property->getMortgageValue(),
                                          buildingCount});
@@ -341,14 +470,17 @@ void AssetPanel::updateData(const Player& currentPlayer, const std::string& syst
         if (!card) {
             continue;
         }
-
+        const std::string key = camelCaseToSnakeCase(card->getTypeName());
+        ensureInventoryThumbnailLoaded(key);
         m_inventoryItems.push_back(InventoryItem{card->getTypeName(),
                                                  card->getDescription(),
                                                  card->getValue(),
-                                                 card->getDuration()});
+                                                 card->getDuration(),
+                                                 key});
     }
 
     m_systemLog = wrapTextByWord(systemLog, kLogWrapWidth);
+    refreshPanelTitle();
 
     clampScroll();
     updateScrollVisual();
@@ -362,11 +494,32 @@ void AssetPanel::refreshPanelTitle() {
 
     const std::string owner = m_currentPlayerName.empty() ? "Player" : m_currentPlayerName;
     if (m_mode == Mode::ASSET) {
-        m_titleText.setString(owner + "'s Asset");
+        m_titleText.setString(owner + "'s Asset    Total: M" + std::to_string(std::max(0, m_assetTotalValue)));
         return;
     }
 
     m_titleText.setString(owner + "'s Inventory");
+}
+
+void AssetPanel::ensureInventoryThumbnailLoaded(const std::string& key) {
+    if (key.empty()) {
+        return;
+    }
+    if (m_inventoryThumbnailTextures.find(key) != m_inventoryThumbnailTextures.end()) {
+        return;
+    }
+    if (m_missingInventoryThumbnailKeys.find(key) != m_missingInventoryThumbnailKeys.end()) {
+        return;
+    }
+
+    sf::Texture texture;
+    const std::string path = m_uiAssetBaseDir + key + ".png";
+    if (!texture.loadFromFile(path)) {
+        m_missingInventoryThumbnailKeys.insert(key);
+        return;
+    }
+
+    m_inventoryThumbnailTextures.emplace(key, std::move(texture));
 }
 
 void AssetPanel::update(sf::Vector2f mousePos) {
@@ -446,9 +599,9 @@ void AssetPanel::openDetailForItem(int index) {
         const AssetItem& item = m_assetItems[static_cast<size_t>(index)];
         m_detailTitle = item.title;
         out << "Kode: " << item.code << "\n";
-        out << "Harga Beli: M " << item.purchasePrice << "\n";
-        out << "Mortgage: M " << item.mortgageValue << "\n";
-        out << "Bangunan: " << item.buildingCount;
+        out << "Bangunan: " << toBuildingText(item.property) << "\n";
+        out << "Harga: M" << item.purchasePrice << "\n";
+        out << "Status: " << toOwnershipStatusText(*item.property);
     } else if (m_mode == Mode::INVENTORY) {
         if (index < 0 || index >= static_cast<int>(m_inventoryItems.size())) {
             return;
@@ -498,65 +651,135 @@ void AssetPanel::renderAssetOrInventory(sf::RenderWindow& window) const {
             continue;
         }
 
-        if (m_hasCardTemplateSprite) {
-            sf::Sprite card(m_cardTemplateTexture);
-            const sf::Vector2u cardTexSize = m_cardTemplateTexture.getSize();
-            if (cardTexSize.x > 0 && cardTexSize.y > 0) {
-                card.setScale(rect.width / static_cast<float>(cardTexSize.x),
-                              rect.height / static_cast<float>(cardTexSize.y));
-            }
-            card.setPosition(rect.left, rect.top);
-            window.draw(card);
-        }
-
         if (m_mode == Mode::ASSET && i < m_assetItems.size()) {
             const AssetItem& item = m_assetItems[i];
 
-            const auto itBanner = m_propertyBannerTextures.find(item.code);
-            if (itBanner != m_propertyBannerTextures.end()) {
-                sf::Sprite banner(itBanner->second);
-                const sf::Vector2u bannerSize = itBanner->second.getSize();
-                if (bannerSize.x > 0 && bannerSize.y > 0) {
-                    banner.setScale((rect.width - 18.0f) / static_cast<float>(bannerSize.x),
-                                    56.0f / static_cast<float>(bannerSize.y));
-                }
-                banner.setPosition(rect.left + 9.0f, rect.top + 8.0f);
-                window.draw(banner);
+            const sf::FloatRect previewRect(rect.left + 8.0f, rect.top + 8.0f, rect.width - 16.0f, rect.height - 72.0f);
+            const sf::Texture* baseTexture = resolvePropertyTexture(item.property, item.code, m_propertyBannerTextures);
+            if (baseTexture && baseTexture->getSize().x > 0 && baseTexture->getSize().y > 0) {
+                sf::Sprite base(*baseTexture);
+                const sf::Vector2u texSize = baseTexture->getSize();
+                base.setScale(previewRect.width / static_cast<float>(texSize.x),
+                              previewRect.height / static_cast<float>(texSize.y));
+                base.setPosition(previewRect.left, previewRect.top);
+                window.draw(base);
+            } else {
+                sf::RectangleShape fallback(sf::Vector2f(previewRect.width, previewRect.height));
+                fallback.setPosition(previewRect.left, previewRect.top);
+                fallback.setFillColor(sf::Color(240, 228, 198));
+                window.draw(fallback);
             }
 
-            sf::Text nameText(item.title, m_bodyFont, 20);
-            nameText.setFillColor(sf::Color(53, 45, 36));
-            nameText.setPosition(rect.left + 12.0f, rect.top + 70.0f);
+            bool nameAlreadyDrawn = false;
+            if (const auto* street = dynamic_cast<const StreetProperty*>(item.property)) {
+                const sf::Color ribbonColor = resolveStreetColor(street->getColorGroup());
+                if (ribbonColor != sf::Color::Transparent) {
+                    sf::RectangleShape ribbon(sf::Vector2f(previewRect.width, 16.0f));
+                    ribbon.setPosition(previewRect.left, previewRect.top);
+                    ribbon.setFillColor(ribbonColor);
+                    ribbon.setOutlineThickness(1.0f);
+                    ribbon.setOutlineColor(sf::Color(0, 0, 0, 95));
+                    window.draw(ribbon);
 
-            sf::Text detailText("Harga: M" + std::to_string(item.purchasePrice) +
-                                    "\nMortgage: M" + std::to_string(item.mortgageValue) +
-                                    "\nBangunan: " + std::to_string(item.buildingCount),
-                                m_bodyFont,
-                                16);
-            detailText.setFillColor(sf::Color(53, 45, 36));
-            detailText.setPosition(rect.left + 12.0f, rect.top + 106.0f);
+                    sf::Text ribbonName(item.title, m_bodyFont, 13);
+                    ribbonName.setFillColor(sf::Color(53, 45, 36));
+                    fitTextToMaxWidth(ribbonName, previewRect.width - 8.0f);
+                    const sf::FloatRect ribbonNameBounds = ribbonName.getLocalBounds();
+                    ribbonName.setOrigin(ribbonNameBounds.left + (ribbonNameBounds.width / 2.0f),
+                                         ribbonNameBounds.top + (ribbonNameBounds.height / 2.0f));
+                    ribbonName.setPosition(previewRect.left + (previewRect.width / 2.0f),
+                                           previewRect.top + 30.0f);
+                    window.draw(ribbonName);
+                    nameAlreadyDrawn = true;
+                }
+            }
 
-            window.draw(nameText);
-            window.draw(detailText);
+            if (!nameAlreadyDrawn && item.property &&
+                item.property->getType() == PropertyType::RAILROAD) {
+                const std::string railroadName = toRailroadTwoLines(item.title);
+                const size_t splitPos = railroadName.find('\n');
+                if (splitPos != std::string::npos) {
+                    const std::string firstLine = railroadName.substr(0, splitPos);
+                    const std::string secondLine = railroadName.substr(splitPos + 1);
+                    const float centerX = previewRect.left + (previewRect.width / 2.0f);
+
+                    sf::Text first(firstLine, m_bodyFont, 13);
+                    first.setFillColor(sf::Color(53, 45, 36));
+                    const sf::FloatRect firstBounds = first.getLocalBounds();
+                    first.setOrigin(firstBounds.left + (firstBounds.width / 2.0f),
+                                    firstBounds.top + (firstBounds.height / 2.0f));
+                    first.setPosition(centerX, previewRect.top + 24.0f);
+                    window.draw(first);
+
+                    sf::Text second(secondLine, m_bodyFont, 13);
+                    second.setFillColor(sf::Color(53, 45, 36));
+                    const sf::FloatRect secondBounds = second.getLocalBounds();
+                    second.setOrigin(secondBounds.left + (secondBounds.width / 2.0f),
+                                     secondBounds.top + (secondBounds.height / 2.0f));
+                    second.setPosition(centerX, previewRect.top + 38.0f);
+                    window.draw(second);
+                } else {
+                    sf::Text railroadSingle(railroadName, m_bodyFont, 13);
+                    railroadSingle.setFillColor(sf::Color(53, 45, 36));
+                    const sf::FloatRect singleBounds = railroadSingle.getLocalBounds();
+                    railroadSingle.setOrigin(singleBounds.left + (singleBounds.width / 2.0f),
+                                             singleBounds.top + (singleBounds.height / 2.0f));
+                    railroadSingle.setPosition(previewRect.left + (previewRect.width / 2.0f),
+                                               previewRect.top + 30.0f);
+                    window.draw(railroadSingle);
+                }
+                nameAlreadyDrawn = true;
+            }
+
+            const bool hideUtilityName = (item.code == "PLN" || item.code == "PAM");
+            if (!nameAlreadyDrawn && !hideUtilityName) {
+                sf::Text nameText(item.title, m_bodyFont, 18);
+                nameText.setFillColor(sf::Color(53, 45, 36));
+                const sf::FloatRect nameBounds = nameText.getLocalBounds();
+                nameText.setOrigin(nameBounds.left + (nameBounds.width / 2.0f), nameBounds.top);
+                nameText.setPosition(rect.left + (rect.width / 2.0f), rect.top + rect.height - 58.0f);
+                window.draw(nameText);
+            }
+
+            sf::Text priceText(std::to_string(item.purchasePrice), m_bodyFont, 16);
+            priceText.setFillColor(sf::Color(53, 45, 36));
+            const sf::FloatRect priceBounds = priceText.getLocalBounds();
+            priceText.setOrigin(priceBounds.left + (priceBounds.width / 2.0f), priceBounds.top);
+            priceText.setPosition(rect.left + (rect.width / 2.0f) + 10.0f, rect.top + rect.height - 85.0f);
+
+            window.draw(priceText);
         }
 
         if (m_mode == Mode::INVENTORY && i < m_inventoryItems.size()) {
             const InventoryItem& item = m_inventoryItems[i];
+            const sf::FloatRect previewRect(rect.left + 8.0f, rect.top + 8.0f, rect.width - 16.0f, rect.height - 8.0f);
 
-            sf::Text nameText(item.typeName, m_bodyFont, 20);
-            nameText.setFillColor(sf::Color(53, 45, 36));
-            nameText.setPosition(rect.left + 12.0f, rect.top + 18.0f);
+            const auto itTexture = m_inventoryThumbnailTextures.find(item.thumbnailKey);
+            if (itTexture != m_inventoryThumbnailTextures.end() &&
+                itTexture->second.getSize().x > 0 && itTexture->second.getSize().y > 0) {
+                sf::Sprite sprite(itTexture->second);
+                const sf::Vector2u texSize = itTexture->second.getSize();
+                sprite.setScale(previewRect.width / static_cast<float>(texSize.x),
+                                previewRect.height / static_cast<float>(texSize.y));
+                sprite.setPosition(previewRect.left, previewRect.top);
+                window.draw(sprite);
+            } else {
+                sf::RectangleShape fallback(sf::Vector2f(previewRect.width, previewRect.height));
+                fallback.setPosition(previewRect.left, previewRect.top);
+                fallback.setFillColor(sf::Color(233, 221, 194));
+                fallback.setOutlineThickness(1.0f);
+                fallback.setOutlineColor(sf::Color(150, 130, 95));
+                window.draw(fallback);
 
-            sf::Text detailText(item.description +
-                                    "\nV:" + std::to_string(item.value) +
-                                    " D:" + std::to_string(item.duration),
-                                m_bodyFont,
-                                16);
-            detailText.setFillColor(sf::Color(53, 45, 36));
-            detailText.setPosition(rect.left + 12.0f, rect.top + 56.0f);
-
-            window.draw(nameText);
-            window.draw(detailText);
+                sf::Text nameText(item.typeName, m_bodyFont, 16);
+                nameText.setFillColor(sf::Color(53, 45, 36));
+                const sf::FloatRect nameBounds = nameText.getLocalBounds();
+                nameText.setOrigin(nameBounds.left + (nameBounds.width / 2.0f),
+                                   nameBounds.top + (nameBounds.height / 2.0f));
+                nameText.setPosition(previewRect.left + (previewRect.width / 2.0f),
+                                     previewRect.top + (previewRect.height / 2.0f));
+                window.draw(nameText);
+            }
         }
     }
 
@@ -584,6 +807,18 @@ void AssetPanel::renderDetailPopup(sf::RenderWindow& window) const {
     const sf::Vector2f popupPos(m_position.x + (m_panelSize.x - popupSize.x) / 2.0f,
                                 m_position.y + (m_panelSize.y - popupSize.y) / 2.0f);
 
+    if (!m_detailTemplateLoadAttempted) {
+        m_detailTemplateLoadAttempted = true;
+        if (m_cardTemplateTexture.loadFromFile(m_uiAssetBaseDir + "asset_card_template.png")) {
+            const sf::Vector2u texSize = m_cardTemplateTexture.getSize();
+            m_hasCardTemplateSprite = (texSize.x > 8 && texSize.y > 8);
+        } else {
+            m_hasCardTemplateSprite = false;
+            std::cerr << "[WARN] Gagal memuat detail template: "
+                      << (m_uiAssetBaseDir + "asset_card_template.png") << "\n";
+        }
+    }
+
     if (m_hasCardTemplateSprite) {
         sf::Sprite popup(m_cardTemplateTexture);
         const sf::Vector2u texSize = m_cardTemplateTexture.getSize();
@@ -593,6 +828,13 @@ void AssetPanel::renderDetailPopup(sf::RenderWindow& window) const {
         }
         popup.setPosition(popupPos);
         window.draw(popup);
+    } else {
+        sf::RectangleShape popupRect(popupSize);
+        popupRect.setPosition(popupPos);
+        popupRect.setFillColor(sf::Color(236, 221, 192));
+        popupRect.setOutlineThickness(2.0f);
+        popupRect.setOutlineColor(sf::Color(110, 86, 58));
+        window.draw(popupRect);
     }
 
     sf::Text title(m_detailTitle, m_titleFont, 42);
