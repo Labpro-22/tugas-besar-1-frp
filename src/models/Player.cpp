@@ -1,4 +1,5 @@
  #include "../../include/models/Player.hpp"
+#include "../../include/models/Card.hpp"
 #include "../../include/models/Property.hpp"
 #include "../../include/utils/GameException.hpp"
 
@@ -130,6 +131,22 @@ void Player::setDiscountPercent(int percent) { discountPercent = percent; }
 int Player::getJailFreeCardCount() const { return hasJailFreeChanceCard_ ? 1 : 0; }
 bool Player::hasJailFreeCard() const { return hasJailFreeChanceCard_; }
 void Player::addJailFreeCard() { hasJailFreeChanceCard_ = true; }
+bool Player::canStoreInSpecialInventorySlot(const Card& card) const {
+    return card.getInventoryState() == InventoryCardState::CHANCE_SPECIAL;
+}
+
+bool Player::storeCardInSpecialInventorySlot(const Card& card) {
+    if (!canStoreInSpecialInventorySlot(card)) {
+        throw GameException(
+            "Slot inventory terakhir hanya boleh diisi kartu kesempatan.");
+    }
+    if (hasJailFreeChanceCard_) {
+        return false;
+    }
+    hasJailFreeChanceCard_ = true;
+    return true;
+}
+
 bool Player::consumeJailFreeCard() {
     if (!hasJailFreeChanceCard_) return false;
     hasJailFreeChanceCard_ = false;

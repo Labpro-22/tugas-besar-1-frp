@@ -76,15 +76,23 @@ void GoToJailCard::apply(Player& player, GameEngine& game) {
 GetOutOfJailCard::GetOutOfJailCard()
     : ActionCard("Bebas dari Penjara.") {}
 
+InventoryCardState GetOutOfJailCard::getInventoryState() const {
+    return InventoryCardState::CHANCE_SPECIAL;
+}
+
 void GetOutOfJailCard::apply(Player& player, GameEngine& game) {
-    if (player.hasJailFreeCard()) {
+    if (!player.canStoreInSpecialInventorySlot(*this)) {
+        throw GameException(
+            "Slot inventory terakhir hanya boleh diisi kartu kesempatan.");
+    }
+
+    if (!player.storeCardInSpecialInventorySlot(*this)) {
         game.pushEvent(GameEventType::CARD, UiTone::INFO,
             "Kartu Kesempatan",
             "Kartu Bebas dari Penjara duplikat dibuang karena slot 4 sudah terisi.");
         return;
     }
 
-    player.addJailFreeCard();
     game.pushEvent(GameEventType::CARD, UiTone::SUCCESS,
         "Kartu Kesempatan",
         "Kartu Bebas dari Penjara disimpan pada slot 4 inventory.");
@@ -97,19 +105,17 @@ void GoToNearestFestivalCard::apply(Player& player, GameEngine& game) {
     Board& board = game.getBoard();
 
     const int current = player.getPosition();
-    int bestDistance = board.size() + 1;
     int bestIndex = -1;
 
-    for (int idx = 0; idx < board.size(); ++idx) {
+    // "Pergi ke Festival terdekat" diartikan sebagai bergerak maju
+    // ke tile Festival pertama yang ditemui saat menyusuri papan.
+    for (int step = 1; step <= board.size(); ++step) {
+        const int idx = (current + step) % board.size();
         if (board.getTileByIndex(idx).getCode() != "FES") {
             continue;
         }
-
-        const int dist = board.distanceTo(current, idx);
-        if (dist > 0 && dist < bestDistance) {
-            bestDistance = dist;
-            bestIndex = idx;
-        }
+        bestIndex = idx;
+        break;
     }
 
     if (bestIndex < 0) {

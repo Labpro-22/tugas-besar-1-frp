@@ -349,6 +349,12 @@ void AssetPanel::updateData(const Player& currentPlayer, const std::string& syst
                                                  card->getValue(),
                                                  card->getDuration()});
     }
+    if (currentPlayer.hasJailFreeCard()) {
+        m_inventoryItems.push_back(InventoryItem{"GetOutOfJailCard",
+                                                 "Kartu kesempatan khusus untuk bebas dari penjara.",
+                                                 0,
+                                                 0});
+    }
 
     m_systemLog = wrapTextByWord(systemLog, kLogWrapWidth);
 

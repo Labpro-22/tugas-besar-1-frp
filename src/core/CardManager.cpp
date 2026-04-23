@@ -125,39 +125,29 @@ std::vector<std::string> CardManager::getPendingSkillDropOptions(const Player& p
         }
     }
 
-    auto it = pendingSkillDraw.find(player.getUsername());
-    if (it != pendingSkillDraw.end() && it->second) {
-        options.push_back(it->second->getTypeName());
-    }
-
     return options;
 }
 
-void CardManager::resolvePendingSkillDrop(Player& player, int discardIndexFromFour) {
+void CardManager::resolvePendingSkillDrop(Player& player, int discardSkillIndex) {
     auto it = pendingSkillDraw.find(player.getUsername());
     if (it == pendingSkillDraw.end() || !it->second) {
         throw GameException("Tidak ada pending kartu skill ke-4 untuk pemain ini.");
     }
 
-    if (discardIndexFromFour < 0 || discardIndexFromFour > 3) {
-        throw InvalidCardIndexException(discardIndexFromFour);
+    if (discardSkillIndex < 0 || discardSkillIndex >= 3) {
+        throw InvalidCardIndexException(discardSkillIndex);
     }
 
     std::shared_ptr<SkillCard> drawn = it->second;
+    const auto& hand = player.getHandCards();
+    if (discardSkillIndex >= static_cast<int>(hand.size())) {
+        throw InvalidCardIndexException(discardSkillIndex);
+    }
+
     pendingSkillDraw.erase(it);
 
-    if (discardIndexFromFour == 3) {
-        skillDeck.discard(drawn);
-        return;
-    }
-
-    const auto& hand = player.getHandCards();
-    if (discardIndexFromFour >= static_cast<int>(hand.size())) {
-        throw InvalidCardIndexException(discardIndexFromFour);
-    }
-
-    std::shared_ptr<SkillCard> discarded = hand[discardIndexFromFour];
-    player.removeCard(discardIndexFromFour);
+    std::shared_ptr<SkillCard> discarded = hand[discardSkillIndex];
+    player.removeCard(discardSkillIndex);
     skillDeck.discard(discarded);
     player.addCard(drawn);
 }

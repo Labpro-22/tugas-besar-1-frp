@@ -40,7 +40,7 @@ public:
 
     bool hasPendingSkillDrop(const Player& player) const;
     std::vector<std::string> getPendingSkillDropOptions(const Player& player) const;
-    void resolvePendingSkillDrop(Player& player, int discardIndexFromFour);
+    void resolvePendingSkillDrop(Player& player, int discardSkillIndex);
 
     void useSkillCard(Player& player, int idx, GameEngine& game,
                       const std::string& targetArg = "");

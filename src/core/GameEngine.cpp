@@ -141,6 +141,87 @@ string toOwnershipStatusString(OwnershipStatus status) {
     }
     throw SaveLoadException("Status properti enum tidak dikenali");
 }
+
+bool isJailFreeCardTypeName(const string& typeName) {
+    return typeName == "GetOutOfJailCard";
+}
+
+bool isKnownSkillCardTypeName(const string& typeName) {
+    return typeName == "MoveCard" ||
+           typeName == "DiscountCard" ||
+           typeName == "ShieldCard" ||
+           typeName == "TeleportCard" ||
+           typeName == "LassoCard" ||
+           typeName == "DemolitionCard";
+}
+
+void validatePlayerInventoryForSave(const Player& player) {
+    const auto& hand = player.getHandCards();
+    if (hand.size() > 3) {
+        throw SaveLoadException(
+            "Inventory skill card player " + player.getUsername() +
+            " melebihi batas 3 kartu.");
+    }
+
+    for (const auto& card : hand) {
+        if (!card) {
+            throw SaveLoadException(
+                "Inventory player " + player.getUsername() +
+                " mengandung skill card null.");
+        }
+    }
+}
+
+void validateSavedInventoryForLoad(const SavedPlayerState& savedPlayer) {
+    int skillCardCount = 0;
+    bool hasJailFreeCard = false;
+
+    for (size_t i = 0; i < savedPlayer.getCards().size(); ++i) {
+        const SavedCardState& savedCard = savedPlayer.getCards()[i];
+        const string& typeName = savedCard.getType();
+
+        if (isJailFreeCardTypeName(typeName)) {
+            if (hasJailFreeCard) {
+                throw SaveLoadException(
+                    "Player " + savedPlayer.getUsername() +
+                    " memiliki lebih dari satu GetOutOfJailCard pada save.");
+            }
+            if (i + 1 != savedPlayer.getCards().size()) {
+                throw SaveLoadException(
+                    "GetOutOfJailCard untuk player " +
+                    savedPlayer.getUsername() +
+                    " harus berada di slot inventory terakhir pada save.");
+            }
+            if (!savedCard.getValue().empty() || !savedCard.getDuration().empty()) {
+                throw SaveLoadException(
+                    "GetOutOfJailCard untuk player " +
+                    savedPlayer.getUsername() +
+                    " tidak boleh memiliki value/duration pada save.");
+            }
+            hasJailFreeCard = true;
+            continue;
+        }
+
+        if (!isKnownSkillCardTypeName(typeName)) {
+            throw SaveLoadException(
+                "Jenis skill card tidak dikenali pada save player " +
+                savedPlayer.getUsername() + ": " + typeName);
+        }
+
+        if (hasJailFreeCard) {
+            throw SaveLoadException(
+                "Skill card untuk player " + savedPlayer.getUsername() +
+                " tidak boleh berada setelah GetOutOfJailCard pada save.");
+        }
+
+        ++skillCardCount;
+        if (skillCardCount > 3) {
+            throw SaveLoadException(
+                "Player " + savedPlayer.getUsername() +
+                " memiliki lebih dari 3 skill card pada save.");
+        }
+    }
+}
 } // namespace
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -250,8 +331,8 @@ CommandResult GameEngine::startNewGame(int nPlayers, std::vector<std::string> na
         if (cardManager && !first.isBankrupt()) {
             cardManager->drawSkillCard(first);
             if (cardManager->hasPendingSkillDrop(first)) {
-                // Default behavior: drop kartu ke-4 yang baru ditarik.
-                cardManager->resolvePendingSkillDrop(first, 3);
+                // Kondisi ini tidak diharapkan saat start game.
+                cardManager->resolvePendingSkillDrop(first, 0);
             }
         }
     }
@@ -496,7 +577,7 @@ CommandResult GameEngine::processCommand(const Command& cmd) {
             GameEventType::SYSTEM,
             UiTone::INFO,
             "Daftar Perintah",
-            "LEMPAR_DADU | PILIH_BUANG_KARTU <index_0_3> | ATUR_DADU X Y | CETAK_PAPAN | CETAK_AKTA [KODE] | "
+            "LEMPAR_DADU | PILIH_BUANG_KARTU <slot_1_3> | ATUR_DADU X Y | CETAK_PAPAN | CETAK_AKTA [KODE] | "
             "CETAK_PROPERTI | GADAI KODE | TEBUS KODE | BANGUN KODE | "
             "GUNAKAN_KEMAMPUAN IDX [TARGET] | BAYAR_DENDA (saat di penjara) | "
             "CETAK_LOG [N] | SIMPAN [FILE] | AKHIRI_GILIRAN | KELUAR"
@@ -1148,33 +1229,47 @@ CommandResult GameEngine::executeTurn() {
     if (cardManager && !next.isBankrupt()) {
         std::shared_ptr<SkillCard> drawn = cardManager->drawSkillCard(next);
         if (cardManager->hasPendingSkillDrop(next)) {
+            const std::string pendingUsername = next.getUsername();
+            auto buildDropOptions = [&](const std::vector<std::string>& rawLabels) {
+                std::vector<PromptOption> options;
+                options.reserve(rawLabels.size());
+                for (size_t i = 0; i < rawLabels.size(); ++i) {
+                    options.push_back(PromptOption{
+                        std::to_string(i),
+                        std::to_string(i + 1) + ". " + rawLabels[i]});
+                }
+                return options;
+            };
+
             result.addEvent(
                 GameEventType::CARD,
                 UiTone::INFO,
                 "Kartu Kemampuan",
                 "Kamu mendapatkan 1 kartu acak baru!\n"
-                "Kartu yang didapat: " + drawn->getTypeName() + "."
+                "Kartu yang didapat: " + drawn->getTypeName() + ".\n"
+                "Inventory kartu kemampuan maksimal 3 kartu. Slot 4 khusus "
+                "GetOutOfJailCard.\n"
+                "Pilih 1 kartu kemampuan lama di slot 1-3 untuk dibuang. "
+                "Kartu baru akan otomatis masuk menggantikannya."
             );
 
-            const std::string promptKey = "skill_drop_" + next.getUsername();
-            std::vector<PromptOption> options;
+            const std::string promptKey = "skill_drop_" + pendingUsername;
             const std::vector<std::string> labels =
                 cardManager->getPendingSkillDropOptions(next);
-            options.reserve(labels.size());
-            for (size_t i = 0; i < labels.size(); ++i) {
-                options.push_back(PromptOption{
-                    std::to_string(i),
-                    std::to_string(i + 1) + ". " + labels[i]});
-            }
 
             PromptRequest prompt;
             prompt.id = promptKey;
             prompt.title = "KARTU KEMAMPUAN";
-            prompt.message = "Tangan penuh (4 kartu). Pilih 1 kartu yang akan dibuang.";
-            prompt.options = std::move(options);
+            prompt.message =
+                "Kartu kemampuan penuh (maksimal 3). "
+                "Slot 4 inventory khusus GetOutOfJailCard. "
+                "Pilih 1 kartu kemampuan lama di slot 1-3 untuk dibuang. "
+                "Kartu baru akan otomatis masuk menggantikannya. "
+                "Kartu baru dan kartu kesempatan tidak bisa dipilih.";
+            prompt.options = buildDropOptions(labels);
             pushPrompt(prompt);
-            setPendingContinuation([this]() {
-                return handlePendingSkillDropPrompt();
+            setPendingContinuation([this, pendingUsername]() {
+                return handlePendingSkillDropPrompt(pendingUsername);
             });
 
             flushEvents(result);
@@ -1574,6 +1669,7 @@ GameSnapshot GameEngine::createSnapshot() const {
 
     for (const Player* player : players) {
         if (!player) continue;
+        validatePlayerInventoryForSave(*player);
 
         SavedPlayerState savedPlayer;
         savedPlayer.setUsername(player->getUsername());
@@ -1701,6 +1797,8 @@ void GameEngine::applySnapshot(const GameSnapshot& snapshot) {
     playersByName.reserve(snapshot.getPlayers().size());
 
     for (const SavedPlayerState& saved : snapshot.getPlayers()) {
+        validateSavedInventoryForLoad(saved);
+
         Player* player = new Player(saved.getUsername(), saved.getMoney());
 
         PlayerStatus status = toPlayerStatusEnum(saved.getStatus());
@@ -2043,7 +2141,7 @@ void GameEngine::resetTurnActionFlags() {
     extraRollAllowedThisTurn = false;
 }
 
-CommandResult GameEngine::handlePendingSkillDropPrompt() {
+CommandResult GameEngine::handlePendingSkillDropPrompt(const std::string& pendingUsername) {
     CommandResult result;
     result.commandName = "PILIH_BUANG_KARTU";
 
@@ -2051,8 +2149,29 @@ CommandResult GameEngine::handlePendingSkillDropPrompt() {
         throw GameException("CardManager belum diinisialisasi.");
     }
 
-    Player& current = getCurrentPlayer();
-    if (!cardManager->hasPendingSkillDrop(current)) {
+    Player* pendingPlayer = nullptr;
+    if (!pendingUsername.empty()) {
+        pendingPlayer = getPlayerByName(pendingUsername);
+        if (pendingPlayer != nullptr && !cardManager->hasPendingSkillDrop(*pendingPlayer)) {
+            pendingPlayer = nullptr;
+        }
+    }
+    if (pendingPlayer == nullptr) {
+        for (Player* player : players) {
+            if (!player) {
+                continue;
+            }
+            if (!cardManager->hasPendingSkillDrop(*player)) {
+                continue;
+            }
+            if (pendingPlayer != nullptr) {
+                throw GameException("Terdapat lebih dari satu pending drop kartu skill.");
+            }
+            pendingPlayer = player;
+        }
+    }
+
+    if (pendingPlayer == nullptr) {
         result.addEvent(
             GameEventType::CARD,
             UiTone::INFO,
@@ -2062,9 +2181,10 @@ CommandResult GameEngine::handlePendingSkillDropPrompt() {
         return result;
     }
 
-    const std::string promptKey = "skill_drop_" + current.getUsername();
+    Player& playerToResolve = *pendingPlayer;
+    const std::string promptKey = "skill_drop_" + playerToResolve.getUsername();
     const std::vector<std::string> labels =
-        cardManager->getPendingSkillDropOptions(current);
+        cardManager->getPendingSkillDropOptions(playerToResolve);
 
     auto requeuePrompt = [&]() {
         std::vector<PromptOption> options;
@@ -2078,11 +2198,16 @@ CommandResult GameEngine::handlePendingSkillDropPrompt() {
         PromptRequest prompt;
         prompt.id = promptKey;
         prompt.title = "KARTU KEMAMPUAN";
-        prompt.message = "Pilih 1 kartu yang akan dibuang.";
+        prompt.message =
+            "Kartu kemampuan penuh (maksimal 3). "
+            "Slot 4 inventory khusus GetOutOfJailCard. "
+            "Pilih 1 kartu kemampuan lama di slot 1-3 untuk dibuang. "
+            "Kartu baru akan otomatis masuk menggantikannya. "
+            "Kartu baru dan kartu kesempatan tidak bisa dipilih.";
         prompt.options = std::move(options);
         pushPrompt(prompt);
-        setPendingContinuation([this]() {
-            return handlePendingSkillDropPrompt();
+        setPendingContinuation([this, pendingUsername]() {
+            return handlePendingSkillDropPrompt(pendingUsername);
         });
     };
 
@@ -2100,23 +2225,36 @@ CommandResult GameEngine::handlePendingSkillDropPrompt() {
         discardIndex = -1;
     }
 
-    if (discardIndex < 0 || discardIndex >= static_cast<int>(labels.size())) {
+    if (rawAnswer == "4") {
         result.addEvent(
             GameEventType::CARD,
             UiTone::WARNING,
-            "Input Tidak Valid",
-            "Pilih nomor kartu yang tersedia.");
+            "Slot Tidak Valid",
+            "Slot 4 inventory khusus GetOutOfJailCard. "
+            "Kartu kemampuan baru hanya boleh ditukar dengan skill card "
+            "di slot 1-3.");
         requeuePrompt();
         flushEvents(result);
         return result;
     }
 
-    cardManager->resolvePendingSkillDrop(current, discardIndex);
+    if (discardIndex < 0 || discardIndex >= static_cast<int>(labels.size())) {
+        result.addEvent(
+            GameEventType::CARD,
+            UiTone::WARNING,
+            "Input Tidak Valid",
+            "Pilih slot skill 1-3 yang tersedia.");
+        requeuePrompt();
+        flushEvents(result);
+        return result;
+    }
+
+    cardManager->resolvePendingSkillDrop(playerToResolve, discardIndex);
     result.addEvent(
         GameEventType::CARD,
         UiTone::SUCCESS,
         "Kartu Kemampuan",
-        current.getUsername() + " membuang kartu: " +
+        playerToResolve.getUsername() + " membuang kartu: " +
             labels[static_cast<size_t>(discardIndex)] + ".");
 
     if (logger) {
@@ -2127,7 +2265,7 @@ CommandResult GameEngine::handlePendingSkillDropPrompt() {
         GameEventType::TURN,
         UiTone::INFO,
         "Giliran Berikutnya",
-        "Sekarang giliran " + current.getUsername() + ".");
+        "Sekarang giliran " + getCurrentPlayer().getUsername() + ".");
 
     flushEvents(result);
     return result;

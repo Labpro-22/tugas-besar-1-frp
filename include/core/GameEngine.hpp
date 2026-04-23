@@ -69,7 +69,7 @@ class GameEngine{
                                              int totalSteps, bool rolledDouble);
         std::vector<bool> buildBankruptFlags() const;
         void resetTurnActionFlags();
-        CommandResult handlePendingSkillDropPrompt();
+        CommandResult handlePendingSkillDropPrompt(const std::string& pendingUsername = "");
     
     public:
         GameEngine();

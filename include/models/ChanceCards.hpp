@@ -26,6 +26,7 @@ public:
 class GetOutOfJailCard : public ActionCard {
 public:
     GetOutOfJailCard();
+    InventoryCardState getInventoryState() const override;
     void apply(Player& player, GameEngine& game) override;
 };
 
