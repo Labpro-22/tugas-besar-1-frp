@@ -75,7 +75,7 @@ struct PopupLayout {
     static constexpr float kPropertyPriceY = 150.0f;
     static constexpr float kPropertyRentStartY = 198.0f;
     static constexpr float kPropertyRentStepY = 35.0f;
-    static constexpr float kPropertyDescriptionY = 538.0f;
+    static constexpr float kPropertyDescriptionY = 408.0f;
 
     static constexpr float kGenericTitleY = 82.0f;
     static constexpr float kGenericDescriptionY = 170.0f;
@@ -686,23 +686,6 @@ bool DynamicPopupBox::handleKeyPressed(sf::Keyboard::Key key) {
         return true;
     }
 
-    if (m_promptWantsBidInput &&
-        ((key >= sf::Keyboard::Num0 && key <= sf::Keyboard::Num9) ||
-         (key >= sf::Keyboard::Numpad0 && key <= sf::Keyboard::Numpad9))) {
-        int digit = 0;
-        if (key >= sf::Keyboard::Num0 && key <= sf::Keyboard::Num9) {
-            digit = static_cast<int>(key - sf::Keyboard::Num0);
-        } else {
-            digit = static_cast<int>(key - sf::Keyboard::Numpad0);
-        }
-
-        if (m_bidInputValue.size() < 9) {
-            m_bidInputValue.push_back(static_cast<char>('0' + digit));
-            m_bidInputText.setString("M" + m_bidInputValue);
-        }
-        return true;
-    }
-
     if (key == sf::Keyboard::Enter || key == sf::Keyboard::Return) {
         if (!m_bidInputValue.empty()) {
             if (m_promptWantsBidInput) {
@@ -1054,6 +1037,9 @@ void DynamicPopupBox::rebuildCardTexts() {
         m_rentTexts.push_back(text);
     }
 
+    // Use smaller font in property mode so description fits below rent rows
+    const bool hasPropertyRows = (m_payload.purchasePrice > 0) || !m_payload.rentPrices.empty();
+    m_descriptionText.setCharacterSize(hasPropertyRows ? 20u : 24u);
     m_descriptionText.setString(
         wrapTextByWidth(m_bodyFont, m_descriptionText.getCharacterSize(), PopupLayout::kCardTextMaxWidth, m_payload.description));
 }

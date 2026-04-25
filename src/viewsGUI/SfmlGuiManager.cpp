@@ -9,6 +9,7 @@
 #include "../../include/models/CardTile.hpp"
 #include "../../include/models/Dice.hpp"
 #include "../../include/models/FestivalTile.hpp"
+#include "../../include/models/GameContext.hpp"
 #include "../../include/models/GoTile.hpp"
 #include "../../include/models/GoToJailTile.hpp"
 #include "../../include/models/JailTile.hpp"
@@ -284,7 +285,8 @@ SfmlGuiManager::SfmlGuiManager(GameEngine& engine)
       m_timedCardPopupFromQueue(false),
       m_pendingSaveFilename(""),
       m_uiBasePath("assets/images/ui/"),
-      m_preTurnSkillHandled(false) {
+      m_preTurnSkillHandled(false),
+      m_jailPopupShownForKey("") {
     if (!loadFontWithFallback()) {
         throw std::runtime_error("Gagal memuat font GUI. Pastikan assets/fonts atau font sistem tersedia.");
     }
@@ -304,6 +306,7 @@ SfmlGuiManager::SfmlGuiManager(GameEngine& engine)
     if (!m_boardView->loadAssets("assets/images/board/")) {
         m_lastMessage = "PERINGATAN: Sebagian aset board GUI gagal dimuat.";
     }
+    m_boardView->loadIconTextures(m_uiBasePath);
     if (!m_mainUi->loadAssets(m_uiBasePath, "assets/images/board/")) {
         m_lastMessage += "\nPERINGATAN: Sebagian aset UI utama gagal dimuat.";
     }
@@ -534,6 +537,7 @@ void SfmlGuiManager::startNewGameFromMenu(int playerCount) {
         m_timedCardPopupFromQueue = false;
         m_preTurnSkillGateKey.clear();
         m_preTurnSkillHandled = false;
+        m_jailPopupShownForKey.clear();
         if (m_popupBox->isVisible()) {
             m_popupBox->hide();
         }
@@ -605,6 +609,7 @@ void SfmlGuiManager::submitLoadFromMenuRequest(const std::string& filename) {
         m_timedCardPopupFromQueue = false;
         m_preTurnSkillGateKey.clear();
         m_preTurnSkillHandled = false;
+        m_jailPopupShownForKey.clear();
         if (m_popupBox->isVisible()) {
             m_popupBox->hide();
         }
@@ -1031,6 +1036,83 @@ std::string SfmlGuiManager::buildCurrentTurnGateKey() const {
     return current.getUsername() + "@" + std::to_string(m_engine.getCurrentTurn());
 }
 
+void SfmlGuiManager::maybeShowJailPopup() {
+    if (m_currentState != GuiState::IDLE || m_popupBox->isVisible()) {
+        return;
+    }
+    if (!m_pendingPrompts.empty() || m_engine.hasPendingContinuation()) {
+        return;
+    }
+
+    const Player& current = m_engine.getCurrentPlayer();
+    if (!current.isJailed() || m_engine.isDiceRolledThisTurn()) {
+        return;
+    }
+
+    // Gunakan gate key per giliran+pemain supaya popup tidak muncul berkali-kali
+    const std::string gateKey = current.getUsername() + "@jail@" +
+                                std::to_string(m_engine.getCurrentTurn());
+    if (m_jailPopupShownForKey == gateKey) {
+        return;
+    }
+    m_jailPopupShownForKey = gateKey;
+
+    const int jailTurns = current.getJailTurns();
+    const int jailFine  = m_engine.getJailFine();
+
+    PopupPayload payload;
+    payload.mode        = PopupMode::SPECIAL;
+    payload.headerTitle = "DALAM PENJARA";
+    payload.cardTitle   = current.getUsername() + " di Penjara";
+    payload.description =
+        "Percobaan ke-" + std::to_string(jailTurns + 1) + " dari 3.\n"
+        "Pilih tindakan:\n"
+        "  • Bayar Denda: bayar M" + std::to_string(jailFine) +
+        " lalu lempar dadu untuk bergerak.\n"
+        "  • Roll Dadu: langsung lempar, keluar jika mendapat double.";
+    payload.actionItems = {
+        PopupActionItem{"jail_pay_fine", "Bayar Denda (M" + std::to_string(jailFine) + ")",
+                        "assets/images/ui/btn_beli.png", true},
+        PopupActionItem{"jail_roll_dice", "Roll Dadu",
+                        "assets/images/ui/btn_cancel.png", true}};
+
+    m_currentState = GuiState::WAITING_CONFIRMATION;
+    m_mainUi->setRollVisible(false);
+    setUiInputEnabled(false);
+
+    m_popupBox->show(payload, [this](const std::string& actionId) {
+        const std::string cleanId = sanitizeActionId(actionId);
+        m_popupBox->hide();
+
+        if (cleanId == "jail_pay_fine") {
+            try {
+                Command cmd;
+                cmd.type = CommandType::PAY_JAIL_FINE;
+                cmd.raw  = "BAYAR_DENDA";
+                const CommandResult result = m_engine.processCommand(cmd);
+                consumeResult(result, true);
+                enqueuePrompts(result.prompts);
+                // Setelah bayar denda pemain bisa roll; kembalikan tombol roll
+                refreshFromEngineState();
+                m_currentState = GuiState::IDLE;
+                m_mainUi->setRollVisible(true);
+                setUiInputEnabled(true);
+                if (!m_pendingPrompts.empty()) {
+                    processNextPrompt();
+                }
+            } catch (const std::exception& e) {
+                m_lastMessage = std::string("ERROR: ") + e.what();
+                refreshFromEngineState();
+                resumeFlowAfterPopup();
+            }
+            return;
+        }
+
+        // jail_roll_dice atau close → biarkan pemain menekan tombol roll sendiri
+        resumeFlowAfterPopup();
+    });
+}
+
 void SfmlGuiManager::maybeShowPreTurnSkillPopup() {
     if (m_currentState != GuiState::IDLE || m_popupBox->isVisible()) {
         return;
@@ -1241,7 +1323,9 @@ void SfmlGuiManager::maybeShowPreTurnSkillPopup() {
 }
 
 void SfmlGuiManager::cacheTimedChanceTransition(const CommandResult& result) {
-    if (result.commandName != "LEMPAR_DADU" && result.commandName != "ATUR_DADU") {
+    if (result.commandName != "LEMPAR_DADU" &&
+        result.commandName != "ATUR_DADU" &&
+        result.commandName != "GUNAKAN_KEMAMPUAN") {
         return;
     }
 
@@ -1267,14 +1351,34 @@ void SfmlGuiManager::cacheTimedChanceTransition(const CommandResult& result) {
         return;
     }
 
-    const int chanceLandingIndex = fullMovement.path[fullMovement.path.size() - 2];
+    int chancePathIndex = -1;
+    const int boardSize = m_engine.getBoard().size();
+    for (size_t i = 0; i < fullMovement.path.size(); ++i) {
+        const int tileIndex = fullMovement.path[i];
+        if (tileIndex < 0 || tileIndex >= boardSize) {
+            continue;
+        }
+        const Tile& tile = m_engine.getBoard().getTileByIndex(tileIndex);
+        const auto* cardTile = dynamic_cast<const CardTile*>(&tile);
+        if (cardTile && cardTile->getDrawType() == CardDrawType::CHANCE) {
+            chancePathIndex = static_cast<int>(i);
+            break;
+        }
+    }
+    if (chancePathIndex < 0 || chancePathIndex >= static_cast<int>(fullMovement.path.size()) - 1) {
+        return;
+    }
+
+    const int chanceLandingIndex = fullMovement.path[static_cast<size_t>(chancePathIndex)];
     const int finalIndex = fullMovement.path.back();
     if (chanceLandingIndex == finalIndex) {
         return;
     }
 
     MovementPayload firstPhase = fullMovement;
-    firstPhase.path.pop_back();
+    firstPhase.path.assign(
+        fullMovement.path.begin(),
+        fullMovement.path.begin() + static_cast<std::ptrdiff_t>(chancePathIndex + 1));
     if (firstPhase.path.empty()) {
         return;
     }
@@ -1286,7 +1390,7 @@ void SfmlGuiManager::cacheTimedChanceTransition(const CommandResult& result) {
     followUpPhase.fromIndex = chanceLandingIndex;
     followUpPhase.toIndex = finalIndex;
     followUpPhase.path = buildFollowUpPathForTimedChance(
-        timedPayload, chanceLandingIndex, finalIndex, m_engine.getBoard().size());
+        timedPayload, chanceLandingIndex, finalIndex, boardSize);
     if (followUpPhase.path.empty()) {
         followUpPhase.path.push_back(finalIndex);
     }
@@ -1342,6 +1446,14 @@ void SfmlGuiManager::refreshFromEngineState() {
     for (size_t i = 0; i < count; ++i) {
         m_players[i]->snapTo(m_boardView->getTileCenter(players[i]->getPosition()));
     }
+
+    // Update board renderer with current player pointer → index mapping for building icons
+    std::vector<const void*> playerPtrs;
+    playerPtrs.reserve(players.size());
+    for (const Player* p : players) {
+        playerPtrs.push_back(static_cast<const void*>(p));
+    }
+    m_boardView->updatePlayerInfo(playerPtrs);
 }
 
 void SfmlGuiManager::updateAllPanels() {
@@ -1357,6 +1469,12 @@ std::string SfmlGuiManager::mapCardEventPayloadToImage(const std::string& payloa
     }
     if (payload == "CARD_ELECTION") {
         return m_uiBasePath + "dana_umum_m200x(n-1).png";
+    }
+    if (payload == "CARD_ARISAN") {
+        return m_uiBasePath + "dana_umum_m300.png";
+    }
+    if (payload == "CARD_BEGAL") {
+        return m_uiBasePath + "dana_umum_m200.png";
     }
     if (payload == "CHANCE_NEAREST_RAILROAD" || payload == "CHANCE_STASIUN") {
         return m_uiBasePath + "kesempatan_stasiun.png";
@@ -1736,18 +1854,29 @@ void SfmlGuiManager::update(sf::Time dt) {
     }
 
     if (m_currentState == GuiState::ANIMATING_PIECE && !anyMoving) {
-        refreshFromEngineState();
         if (m_deferredMovement.has_value()) {
-            showLandingPopup(m_deferredMovement.value());
+            // Don't snap pieces when a timed card follow-up animation is pending.
+            // refreshFromEngineState() would snap the piece to the final destination
+            // (e.g., station) before the card popup + follow-up animation run,
+            // causing the piece to visually jump back-and-forth.
+            if (!m_timedCardImageAfterLanding.has_value()) {
+                refreshFromEngineState();
+            }
+            MovementPayload landing = m_deferredMovement.value();
             m_deferredMovement.reset();
+            showLandingPopup(landing);
         } else {
+            refreshFromEngineState();
             processNextPrompt();
         }
     }
 
     if (m_currentState == GuiState::IDLE && !m_popupBox->isVisible() &&
         (!m_debugDicePopup || !m_debugDicePopup->isVisible())) {
-        maybeShowPreTurnSkillPopup();
+        maybeShowJailPopup();
+        if (m_currentState == GuiState::IDLE && !m_popupBox->isVisible()) {
+            maybeShowPreTurnSkillPopup();
+        }
     }
 }
 
@@ -1887,6 +2016,30 @@ void SfmlGuiManager::handlePopupAction(const std::string& actionId) {
             return;
         }
 
+        if (stableActionId == "gadai_property") {
+            const Player& current = m_engine.getCurrentPlayer();
+            const Tile& currentTile = m_engine.getBoard().getTileByIndex(current.getPosition());
+            const auto* propertyTile = dynamic_cast<const PropertyTile*>(&currentTile);
+            if (!propertyTile) {
+                throw GameException("GADAI hanya bisa dilakukan di petak properti.");
+            }
+            Command cmd;
+            cmd.type = CommandType::MORTGAGE;
+            cmd.raw = "GADAI " + propertyTile->getProperty().getCode();
+            cmd.args = {propertyTile->getProperty().getCode()};
+            const CommandResult result = m_engine.processCommand(cmd);
+            const bool hasMovement = result.movement.has_value();
+            consumeResult(result, !hasMovement);
+            enqueuePrompts(result.prompts);
+            if (hasMovement) {
+                beginMovementAnimation(result.movement.value());
+            } else {
+                refreshFromEngineState();
+                processNextPrompt();
+            }
+            return;
+        }
+
         if (stableActionId == "cancel" || stableActionId == "close") {
             if (!resolvePendingPurchase("n")) {
                 m_lastMessage = "Popup ditutup oleh pemain.";
@@ -1927,6 +2080,17 @@ PopupPayload SfmlGuiManager::buildLandingPayload(const MovementPayload& movement
     payload.cardTitle = tile.getName();
     payload.description = "Kode: " + tile.getCode() + "\nPemain: " + movement.playerName;
 
+    const Player* movingPlayer = nullptr;
+    for (const Player* candidate : m_engine.getPlayers()) {
+        if (!candidate) {
+            continue;
+        }
+        if (candidate->getUsername() == movement.playerName) {
+            movingPlayer = candidate;
+            break;
+        }
+    }
+
     if (const auto* propertyTile = dynamic_cast<const PropertyTile*>(&tile)) {
         const Property& property = propertyTile->getProperty();
         payload.mode = PopupMode::PROPERTY;
@@ -1934,8 +2098,27 @@ PopupPayload SfmlGuiManager::buildLandingPayload(const MovementPayload& movement
         payload.cardTitle = property.getName();
         payload.purchasePrice = property.getPurchasePrice();
         payload.rentPrices = buildDummyRentRows(property);
-        payload.description = "Kode: " + property.getCode() + "\nHarga hipotek: M" +
+        payload.description = "Kode: " + property.getCode() + "\nNilai gadai: M" +
                               std::to_string(property.getMortgageValue());
+
+        if (property.getOwner() != nullptr) {
+            payload.description += "\nPemilik: " + property.getOwner()->getUsername();
+            if (movingPlayer != nullptr && property.getOwner() != movingPlayer) {
+                if (!property.isMortgaged()) {
+                    const GameContext ctx(
+                        m_engine.getPlayers(),
+                        &m_engine.getBoard(),
+                        m_engine.getDice().getTotal());
+                    const int rentAmount = property.calculateRent(ctx);
+                    payload.description += "\nAnda membayar biaya sewa sebesar M" +
+                        std::to_string(rentAmount);
+                } else {
+                    payload.description += "\nStatus: MORTGAGED (tidak ada sewa)";
+                }
+            }
+        } else {
+            payload.description += "\nStatus: BANK";
+        }
 
         if (dynamic_cast<const StreetProperty*>(&property) != nullptr) {
             payload.showStreetColorRibbon = true;
@@ -1967,6 +2150,15 @@ PopupPayload SfmlGuiManager::buildLandingPayload(const MovementPayload& movement
             } else if (buildOption == PropertyManager::BuildOption::HOTEL) {
                 payload.actionItems.push_back(
                     PopupActionItem{"build_property", "+ Hotel", "assets/images/ui/btn_rumah.png", true});
+            }
+        }
+
+        // Tampilkan tombol Gadai jika pemain memiliki properti ini dan bisa digadaikan
+        if (!hasBuyOption && movingPlayer != nullptr && property.getOwner() == movingPlayer) {
+            const Player& currentPlayer = m_engine.getCurrentPlayer();
+            if (m_engine.getPropertyManager().canMortgage(currentPlayer, property)) {
+                payload.actionItems.push_back(
+                    PopupActionItem{"gadai_property", "Gadai", "assets/images/ui/btn_cancel.png", true});
             }
         }
 
@@ -2025,11 +2217,25 @@ PopupPayload SfmlGuiManager::buildLandingPayload(const MovementPayload& movement
         return payload;
     }
 
-    if (dynamic_cast<const GoToJailTile*>(&tile) != nullptr ||
-        dynamic_cast<const JailTile*>(&tile) != nullptr) {
+    if (dynamic_cast<const GoToJailTile*>(&tile) != nullptr) {
         payload.mode = PopupMode::SPECIAL;
         payload.headerTitle = "PENJARA";
-        payload.description += "\nStatus penjara dikelola engine.";
+        payload.description += "\n" + movement.playerName +
+                               " masuk penjara. Giliran berakhir.";
+        payload.actionItems = {PopupActionItem{"close", "Lanjut", "assets/images/ui/btn_cancel.png", true}};
+        return payload;
+    }
+
+    if (dynamic_cast<const JailTile*>(&tile) != nullptr) {
+        payload.mode = PopupMode::SPECIAL;
+        payload.headerTitle = "PENJARA";
+        if (movingPlayer != nullptr && movingPlayer->isJailed()) {
+            payload.description += "\n" + movement.playerName +
+                                   " masuk penjara dan ditahan.";
+        } else {
+            payload.description += "\n" + movement.playerName +
+                                   " hanya berkunjung ke penjara.";
+        }
         payload.actionItems = {PopupActionItem{"close", "Lanjut", "assets/images/ui/btn_cancel.png", true}};
         return payload;
     }
@@ -2039,14 +2245,24 @@ PopupPayload SfmlGuiManager::buildLandingPayload(const MovementPayload& movement
 }
 
 std::vector<int> SfmlGuiManager::buildDummyRentRows(const Property& property) const {
-    if (dynamic_cast<const StreetProperty*>(&property) != nullptr) {
-        return {50, 100, 150, 300, 450, 650};
+    if (const auto* street = dynamic_cast<const StreetProperty*>(&property)) {
+        return street->getRentLevels();
     }
-    if (dynamic_cast<const RailroadProperty*>(&property) != nullptr) {
-        return {250, 500, 1000, 2000};
+    if (const auto* railroad = dynamic_cast<const RailroadProperty*>(&property)) {
+        std::vector<int> rents;
+        rents.reserve(railroad->getRentByCount().size());
+        for (const auto& row : railroad->getRentByCount()) {
+            rents.push_back(row.second);
+        }
+        return rents;
     }
-    if (dynamic_cast<const UtilityProperty*>(&property) != nullptr) {
-        return {300, 600};
+    if (const auto* utility = dynamic_cast<const UtilityProperty*>(&property)) {
+        std::vector<int> rows;
+        rows.reserve(utility->getMultiplierByCount().size());
+        for (const auto& row : utility->getMultiplierByCount()) {
+            rows.push_back(row.second);
+        }
+        return rows;
     }
     return {100, 200, 300};
 }

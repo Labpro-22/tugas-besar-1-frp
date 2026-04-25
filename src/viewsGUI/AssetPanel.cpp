@@ -938,13 +938,58 @@ void AssetPanel::renderDetailPopup(sf::RenderWindow& window) const {
         window.draw(popupRect);
     }
 
-    sf::Text title(m_detailTitle, m_titleFont, 42);
+    const float textMaxWidth = popupSize.x - 40.0f;
+
+    // Auto-shrink title to fit
+    unsigned int titleSize = 36;
+    {
+        sf::Text probe(m_detailTitle, m_titleFont, titleSize);
+        while (titleSize > 18 && probe.getLocalBounds().width > textMaxWidth) {
+            --titleSize;
+            probe.setCharacterSize(titleSize);
+        }
+    }
+    sf::Text title(m_detailTitle, m_titleFont, titleSize);
     title.setFillColor(sf::Color(53, 45, 36));
     title.setPosition(popupPos.x + 20.0f, popupPos.y + 18.0f);
 
-    sf::Text body(m_detailBody + "\n\n(klik untuk menutup)", m_bodyFont, 24);
+    // Word-wrap body text
+    auto wrapText = [&](const std::string& src, const sf::Font& font,
+                        unsigned int charSz, float maxW) -> std::string {
+        sf::Text probe;
+        probe.setFont(font);
+        probe.setCharacterSize(charSz);
+        std::ostringstream out;
+        std::istringstream lines(src);
+        std::string line;
+        bool firstLine = true;
+        while (std::getline(lines, line)) {
+            std::istringstream words(line);
+            std::string word, cur;
+            while (words >> word) {
+                const std::string cand = cur.empty() ? word : cur + " " + word;
+                probe.setString(cand);
+                if (!cur.empty() && probe.getLocalBounds().width > maxW) {
+                    if (!firstLine) out << '\n';
+                    out << cur;
+                    cur = word;
+                    firstLine = false;
+                } else {
+                    cur = cand;
+                }
+            }
+            if (!firstLine) out << '\n';
+            out << cur;
+            firstLine = false;
+        }
+        return out.str();
+    };
+
+    const std::string wrappedBody =
+        wrapText(m_detailBody + "\n\n(klik untuk menutup)", m_bodyFont, 22, textMaxWidth);
+    sf::Text body(wrappedBody, m_bodyFont, 22);
     body.setFillColor(sf::Color(53, 45, 36));
-    body.setPosition(popupPos.x + 20.0f, popupPos.y + 84.0f);
+    body.setPosition(popupPos.x + 20.0f, popupPos.y + 18.0f + static_cast<float>(titleSize) + 10.0f);
 
     window.draw(title);
     window.draw(body);

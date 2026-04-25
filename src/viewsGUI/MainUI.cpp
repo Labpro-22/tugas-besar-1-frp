@@ -224,7 +224,7 @@ void MainUI::renderOverlay(sf::RenderWindow& window) const {
 
     if (m_rollVisible) {
         m_rollDiceButton.render(window);
-        window.draw(m_turnStatusText);
     }
+    window.draw(m_turnStatusText);
 }
 } // namespace viewsGUI

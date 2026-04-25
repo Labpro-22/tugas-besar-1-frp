@@ -144,6 +144,70 @@ bool BoardRenderer::loadTexturesFromDirectory(const std::string& directoryPath,
     return success;
 }
 
+bool BoardRenderer::loadIconTextures(const std::string& uiDirectory) {
+    const std::string uiDir = (!uiDirectory.empty() && uiDirectory.back() == '/')
+                                  ? uiDirectory
+                                  : uiDirectory + "/";
+    const std::vector<std::string> colorNames = {"blue", "red", "yellow", "green"};
+    bool success = true;
+    for (const auto& c : colorNames) {
+        if (!loadTexture("house:" + c, uiDir + c + "house_icon.png")) {
+            success = false;
+        }
+        if (!loadTexture("hotel:" + c, uiDir + c + "hotel_icon.png")) {
+            success = false;
+        }
+    }
+    return success;
+}
+
+void BoardRenderer::updatePlayerInfo(const std::vector<const void*>& playerPtrs) {
+    m_playerIndexMap.clear();
+    for (int i = 0; i < static_cast<int>(playerPtrs.size()); ++i) {
+        if (playerPtrs[i]) {
+            m_playerIndexMap[playerPtrs[i]] = i;
+        }
+    }
+}
+
+std::string BoardRenderer::getPlayerColorName(int playerIndex) const {
+    static const std::vector<std::string> kColors = {"blue", "red", "yellow", "green"};
+    if (playerIndex < 0 || playerIndex >= static_cast<int>(kColors.size())) {
+        return "blue";
+    }
+    return kColors[static_cast<size_t>(playerIndex)];
+}
+
+void BoardRenderer::drawBuildingIcons(sf::RenderTexture& tileCanvas,
+                                      const std::string& textureKey,
+                                      int count,
+                                      const sf::Vector2f& logicalSize) const {
+    const sf::Texture* iconTex = getTexture(textureKey);
+    if (!iconTex || count <= 0) {
+        return;
+    }
+
+    constexpr float kIconH  = 11.0f;
+    constexpr float kIconGap = 2.0f;
+    const sf::Vector2u texSize = iconTex->getSize();
+    if (texSize.x == 0 || texSize.y == 0) {
+        return;
+    }
+    const float iconW = kIconH * static_cast<float>(texSize.x) / static_cast<float>(texSize.y);
+    const float totalW = static_cast<float>(count) * iconW +
+                         static_cast<float>(count - 1) * kIconGap;
+    float startX = (logicalSize.x - totalW) / 2.0f;
+    constexpr float kIconY = 56.0f;
+
+    for (int i = 0; i < count; ++i) {
+        sf::Sprite sprite(*iconTex);
+        sprite.setScale(iconW / static_cast<float>(texSize.x),
+                        kIconH / static_cast<float>(texSize.y));
+        sprite.setPosition(startX + static_cast<float>(i) * (iconW + kIconGap), kIconY);
+        tileCanvas.draw(sprite);
+    }
+}
+
 bool BoardRenderer::loadAllTileTextures() {
     bool success = true;
 
@@ -392,8 +456,9 @@ void BoardRenderer::drawCenteredText(sf::RenderTarget& target,
 void BoardRenderer::drawStreetTileContent(sf::RenderTexture& tileCanvas,
                                           const Property& property,
                                           const sf::Vector2f& logicalSize) const {
+    const auto* street = dynamic_cast<const StreetProperty*>(&property);
     std::string colorGroup;
-    if (const auto* street = dynamic_cast<const StreetProperty*>(&property)) {
+    if (street) {
         colorGroup = street->getColorGroup();
     }
 
@@ -424,6 +489,21 @@ void BoardRenderer::drawStreetTileContent(sf::RenderTexture& tileCanvas,
                      Typography::kStreetPriceMaxSize,
                      Typography::kStreetPriceMinSize,
                      Theme::TextDark);
+
+    // Draw house/hotel icons if buildings exist
+    if (street && street->getBuildingLevel() != BuildingLevel::NONE) {
+        const void* ownerPtr = static_cast<const void*>(property.getOwner());
+        auto it = m_playerIndexMap.find(ownerPtr);
+        const int playerIdx = (it != m_playerIndexMap.end()) ? it->second : 0;
+        const std::string colorName = getPlayerColorName(playerIdx);
+
+        if (street->getBuildingLevel() == BuildingLevel::HOTEL) {
+            drawBuildingIcons(tileCanvas, "hotel:" + colorName, 1, logicalSize);
+        } else {
+            const int houseCount = street->getBuildingCount();
+            drawBuildingIcons(tileCanvas, "house:" + colorName, houseCount, logicalSize);
+        }
+    }
 }
 
 void BoardRenderer::drawRailroadTileContent(sf::RenderTexture& tileCanvas,

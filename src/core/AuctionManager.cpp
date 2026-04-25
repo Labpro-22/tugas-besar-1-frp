@@ -28,7 +28,8 @@ AuctionManager::AuctionManager(GameEngine& engine, Bank& bank,
       consecutivePasses(0),
       atLeastOneBid(false),
       auctionActive(false),
-      currentAuctionIndex(0) {}
+      currentAuctionIndex(0),
+      auctionTriggerName("Bank") {}
 
 std::vector<Player*> AuctionManager::buildAuctionOrder(
     Player* triggerPlayer, bool excludeBankrupt) const {
@@ -73,6 +74,9 @@ std::vector<Player*> AuctionManager::buildAuctionOrder(
         if (!candidate) {
             continue;
         }
+        if (candidate->isJailed()) {
+            continue;
+        }
         if (excludeBankrupt && candidate->isBankrupt()) {
             continue;
         }
@@ -84,6 +88,9 @@ std::vector<Player*> AuctionManager::buildAuctionOrder(
     if (order.empty() && !excludeBankrupt) {
         for (Player* player : allPlayers) {
             if (player) {
+                if (player->isJailed()) {
+                    continue;
+                }
                 order.push_back(player);
             }
         }
@@ -99,6 +106,7 @@ void AuctionManager::resetState() {
     atLeastOneBid = false;
     auctionActive = false;
     currentAuctionIndex = 0;
+    auctionTriggerName = "Bank";
     auctionOrder.clear();
 }
 
@@ -139,7 +147,7 @@ void AuctionManager::continueAuction() {
         }
 
         Player* current = auctionOrder[currentAuctionIndex];
-        if (!current || current->isBankrupt()) {
+        if (!current || current->isBankrupt() || current->isJailed()) {
             currentAuctionIndex =
                 (currentAuctionIndex + 1) % static_cast<int>(auctionOrder.size());
             continue;
@@ -151,7 +159,10 @@ void AuctionManager::continueAuction() {
         const int shownHighestBid = std::max(0, highestBid);
 
         std::ostringstream info;
-        info << "--\n\nPenawaran tertinggi saat ini: M" << shownHighestBid;
+        info << "Objek lelang: " << auctionedProp->getName()
+             << " (" << auctionedProp->getCode() << ")\n"
+             << "Pemicu lelang: " << auctionTriggerName << "\n"
+             << "--\n\nPenawaran tertinggi saat ini: M" << shownHighestBid;
         if (highestBidder) {
             info << " (" << highestBidder->getUsername() << ")";
         }
@@ -175,10 +186,20 @@ void AuctionManager::continueAuction() {
             }
             options.push_back("BID_MIN");
 
-            engine.pushPrompt(
-                promptKey,
-                "Apakah ingin mengajukan tawaran? (B/P):",
-                options);
+            std::ostringstream promptMsg;
+            promptMsg << "Properti: " << auctionedProp->getName()
+                      << " (" << auctionedProp->getCode() << ")\n"
+                      << "Pemicu: " << auctionTriggerName << "\n"
+                      << "Penawaran tertinggi: M" << shownHighestBid;
+            if (highestBidder) {
+                promptMsg << " oleh " << highestBidder->getUsername();
+            } else {
+                promptMsg << " (belum ada penawaran)";
+            }
+            promptMsg << "\nGiliran: " << current->getUsername()
+                      << " (Uang: M" << current->getMoney() << ")\n"
+                      << "Pilih aksi: PASS / BID_MIN / BID <angka>";
+            engine.pushPrompt(promptKey, promptMsg.str(), options);
             engine.setPendingContinuation([this]() {
                 CommandResult resumed;
                 continueAuction();
@@ -267,13 +288,17 @@ void AuctionManager::startAuction(Property& prop,
     if (!auctionActive) {
         resetState();
         auctionedProp = &prop;
+        auctionTriggerName =
+            (triggerPlayer != nullptr) ? triggerPlayer->getUsername() : "Bank";
         auctionOrder = buildAuctionOrder(triggerPlayer, excludeBankrupt);
         auctionActive = true;
         currentAuctionIndex = 0;
 
         engine.pushEvent(GameEventType::AUCTION, UiTone::INFO,
             "Lelang Dimulai",
-            "Properti " + prop.getName() + " masuk sistem lelang...\n\nLelang dimulai!");
+            "Pemicu: " + auctionTriggerName + "\n"
+            "Objek: " + prop.getName() + " (" + prop.getCode() + ")\n\n"
+            "Lelang dimulai!");
     }
 
     continueAuction();

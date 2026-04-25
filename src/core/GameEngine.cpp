@@ -693,26 +693,15 @@ CommandResult GameEngine::processCommand(const Command& cmd) {
                 current.setStatus(PlayerStatus::ACTIVE);
                 current.setJailTurns(0);
                 current.resetConsecutiveDoubles();
+                // Keluar penjara tapi tetap di petak penjara; berikan giliran lempar lagi.
+                extraRollAllowedThisTurn = true;
                 flowResult.addEvent(
                     GameEventType::SYSTEM,
                     UiTone::SUCCESS,
                     "Double Penjara",
                     current.getUsername() +
-                        " mendapatkan double dan keluar dari penjara.");
-
-                flowResult.append(moveCurrentPlayer(total));
-                if (!flowResult.prompts.empty() || hasPendingContinuation()) {
-                    chainPendingContinuation([this]() {
-                        CommandResult resumed;
-                        Player& resumedPlayer = getCurrentPlayer();
-                        resumedPlayer.resetConsecutiveDoubles();
-                        resumed.append(executeTurn());
-                        return resumed;
-                    });
-                    return;
-                }
-                current.resetConsecutiveDoubles();
-                flowResult.append(executeTurn());
+                        " mendapatkan double dan keluar dari penjara. "
+                        "Silakan lempar dadu kembali untuk bergerak.");
                 return;
             }
         }
@@ -1388,8 +1377,53 @@ CommandResult GameEngine::processCommand(const Command& cmd) {
         }
 
         turnActionTaken = true;
+        const int originalPosition = current.getPosition();
+        const int moveCardSteps =
+            (cardType == "MoveCard" && hand[idx] != nullptr) ? hand[idx]->getValue() : 0;
         const std::string cardName = hand[idx]->getTypeName();
+
+        // Simpan posisi target sebelum kartu Lasso diaplikasikan
+        int lassoTargetOriginalPos = -1;
+        Player* lassoTargetPlayer = nullptr;
+        if (cardType == "LassoCard" && !target.empty()) {
+            lassoTargetPlayer = getPlayerByName(target);
+            if (lassoTargetPlayer) {
+                lassoTargetOriginalPos = lassoTargetPlayer->getPosition();
+            }
+        }
+
         cardManager->useSkillCard(current, idx, *this, target);
+
+        const int finalPosition = current.getPosition();
+        if (board != nullptr && finalPosition != originalPosition) {
+            // Pemain sendiri berpindah (MoveCard / TeleportCard)
+            MovementPayload movement;
+            movement.playerIndex = findPlayerIndexByPointer(players, &current);
+            movement.playerName = current.getUsername();
+            movement.fromIndex = originalPosition;
+
+            if (cardType == "MoveCard" && moveCardSteps > 0) {
+                int pathCursor = originalPosition;
+                appendForwardPath(movement.path, pathCursor, moveCardSteps, board->size());
+            }
+
+            if (movement.path.empty() || movement.path.back() != finalPosition) {
+                movement.path.push_back(finalPosition);
+            }
+            movement.toIndex = movement.path.back();
+            result.movement = movement;
+        } else if (cardType == "LassoCard" && lassoTargetPlayer != nullptr &&
+                   lassoTargetOriginalPos >= 0 &&
+                   lassoTargetPlayer->getPosition() != lassoTargetOriginalPos) {
+            // Lasso: target berpindah ke posisi card user → animasikan target-nya
+            MovementPayload movement;
+            movement.playerIndex = findPlayerIndexByPointer(players, lassoTargetPlayer);
+            movement.playerName = lassoTargetPlayer->getUsername();
+            movement.fromIndex = lassoTargetOriginalPos;
+            movement.toIndex = lassoTargetPlayer->getPosition();
+            movement.path.push_back(lassoTargetPlayer->getPosition());
+            result.movement = movement;
+        }
 
         if (logger) {
             logger->logSkillCard(current.getUsername(), cardName,
@@ -1973,6 +2007,7 @@ int  GameEngine::getMaxTurn()    const { return maxTurn;                     }
 int  GameEngine::getGoSalary()   const { return goSalary;                    }
 int  GameEngine::getJailFine()   const { return jailFine;                    }
 int  GameEngine::getCurrentTurn() const{ return turnManager.getTurnNumber(); }
+bool GameEngine::isDiceRolledThisTurn() const { return diceRolledThisTurn; }
 
 GameSnapshot GameEngine::createSnapshot() const {
     GameSnapshot snapshot;
