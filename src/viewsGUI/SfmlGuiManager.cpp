@@ -531,6 +531,7 @@ void SfmlGuiManager::startNewGameFromMenu(int playerCount) {
         m_pendingCardEventImagePaths.clear();
         m_deferredMovement.reset();
         m_splitMovementForCommand.reset();
+        m_landingMovementContext.reset();
         m_timedCardImageAfterLanding.reset();
         m_timedCardMovementAfterPopup.reset();
         m_cardTimer = 0.0f;
@@ -603,6 +604,7 @@ void SfmlGuiManager::submitLoadFromMenuRequest(const std::string& filename) {
         m_pendingCardEventImagePaths.clear();
         m_deferredMovement.reset();
         m_splitMovementForCommand.reset();
+        m_landingMovementContext.reset();
         m_timedCardImageAfterLanding.reset();
         m_timedCardMovementAfterPopup.reset();
         m_cardTimer = 0.0f;
@@ -815,6 +817,7 @@ void SfmlGuiManager::executeDiceCommand(const Command& cmd) {
         m_cardTimer = 0.0f;
         m_timedCardPopupFromQueue = false;
         m_deferredMovement.reset();
+        m_landingMovementContext.reset();
         m_timedCardImageAfterLanding.reset();
         m_timedCardMovementAfterPopup.reset();
         m_splitMovementForCommand.reset();
@@ -840,6 +843,7 @@ void SfmlGuiManager::executeDiceCommand(const Command& cmd) {
             m_deferredMovement.reset();
         }
         m_splitMovementForCommand.reset();
+        m_landingMovementContext.reset();
 
         m_currentState = GuiState::ANIMATING_DICE;
     } catch (const std::exception& e) {
@@ -1910,6 +1914,8 @@ void SfmlGuiManager::render() {
 }
 
 void SfmlGuiManager::showLandingPopup(const MovementPayload& movement) {
+    m_landingMovementContext.reset();
+
     if (movement.toIndex >= 0 && movement.toIndex < m_engine.getBoard().size()) {
         const Tile& tile = m_engine.getBoard().getTileByIndex(movement.toIndex);
         if (const auto* cardTile = dynamic_cast<const CardTile*>(&tile)) {
@@ -1938,6 +1944,7 @@ void SfmlGuiManager::showLandingPopup(const MovementPayload& movement) {
     m_currentState = GuiState::WAITING_CONFIRMATION;
     m_mainUi->setRollVisible(false);
     setUiInputEnabled(false);
+    m_landingMovementContext = movement;
 
     m_popupBox->show(buildLandingPayload(movement), [this](const std::string& actionId) {
         this->handlePopupAction(actionId);
@@ -1946,6 +1953,7 @@ void SfmlGuiManager::showLandingPopup(const MovementPayload& movement) {
 
 void SfmlGuiManager::handlePopupAction(const std::string& actionId) {
     const std::string stableActionId = sanitizeActionId(actionId);
+    const std::optional<MovementPayload> landingContext = m_landingMovementContext;
 
     auto resolvePendingPurchase = [this](const std::string& answer) -> bool {
         for (auto it = m_pendingPrompts.begin(); it != m_pendingPrompts.end(); ++it) {
@@ -1979,6 +1987,7 @@ void SfmlGuiManager::handlePopupAction(const std::string& actionId) {
 
     try {
         m_popupBox->hide();
+        m_landingMovementContext.reset();
 
         if (stableActionId == "buy_land") {
             if (!resolvePendingPurchase("y")) {
@@ -1990,47 +1999,52 @@ void SfmlGuiManager::handlePopupAction(const std::string& actionId) {
         }
 
         if (stableActionId == "build_property" || stableActionId == "add_house") {
-            const Player& current = m_engine.getCurrentPlayer();
-            const Tile& currentTile = m_engine.getBoard().getTileByIndex(current.getPosition());
-            const auto* propertyTile = dynamic_cast<const PropertyTile*>(&currentTile);
+            const MovementPayload* landing = nullptr;
+            if (landingContext.has_value()) {
+                landing = &landingContext.value();
+            }
+
+            Player* actingPlayer = nullptr;
+            int landingIndex = -1;
+            if (landing != nullptr) {
+                landingIndex = landing->toIndex;
+                for (Player* candidate : m_engine.getPlayers()) {
+                    if (!candidate) {
+                        continue;
+                    }
+                    if (candidate->getUsername() == landing->playerName) {
+                        actingPlayer = candidate;
+                        break;
+                    }
+                }
+            }
+
+            if (actingPlayer == nullptr) {
+                actingPlayer = &m_engine.getCurrentPlayer();
+            }
+            if (landingIndex < 0) {
+                landingIndex = actingPlayer->getPosition();
+            }
+
+            Tile& landingTile = m_engine.getBoard().getTileByIndex(landingIndex);
+            auto* propertyTile = dynamic_cast<PropertyTile*>(&landingTile);
             if (!propertyTile) {
                 throw GameException("BANGUN hanya bisa dilakukan di petak properti.");
             }
+            auto* street = dynamic_cast<StreetProperty*>(&propertyTile->getProperty());
+            if (!street) {
+                throw GameException("BANGUN hanya bisa dilakukan di properti STREET.");
+            }
 
-            Command cmd;
-            cmd.type = CommandType::BUILD;
-            cmd.raw = "BANGUN";
-            cmd.args = {propertyTile->getProperty().getCode()};
-
-            const CommandResult result = m_engine.processCommand(cmd);
+            CommandResult result;
+            result.commandName = "BANGUN";
+            result.success = m_engine.getPropertyManager().buildOnProperty(
+                *actingPlayer, *street);
+            m_engine.flushEvents(result);
             const bool hasMovement = result.movement.has_value();
             consumeResult(result, !hasMovement);
             enqueuePrompts(result.prompts);
 
-            if (hasMovement) {
-                beginMovementAnimation(result.movement.value());
-            } else {
-                refreshFromEngineState();
-                processNextPrompt();
-            }
-            return;
-        }
-
-        if (stableActionId == "gadai_property") {
-            const Player& current = m_engine.getCurrentPlayer();
-            const Tile& currentTile = m_engine.getBoard().getTileByIndex(current.getPosition());
-            const auto* propertyTile = dynamic_cast<const PropertyTile*>(&currentTile);
-            if (!propertyTile) {
-                throw GameException("GADAI hanya bisa dilakukan di petak properti.");
-            }
-            Command cmd;
-            cmd.type = CommandType::MORTGAGE;
-            cmd.raw = "GADAI " + propertyTile->getProperty().getCode();
-            cmd.args = {propertyTile->getProperty().getCode()};
-            const CommandResult result = m_engine.processCommand(cmd);
-            const bool hasMovement = result.movement.has_value();
-            consumeResult(result, !hasMovement);
-            enqueuePrompts(result.prompts);
             if (hasMovement) {
                 beginMovementAnimation(result.movement.value());
             } else {
@@ -2115,6 +2129,9 @@ PopupPayload SfmlGuiManager::buildLandingPayload(const MovementPayload& movement
                 } else {
                     payload.description += "\nStatus: MORTGAGED (tidak ada sewa)";
                 }
+            } else if (movingPlayer != nullptr && property.getOwner() == movingPlayer &&
+                       property.getType() != PropertyType::STREET) {
+                payload.description += "\nAnda sekarang memiliki properti ini.";
             }
         } else {
             payload.description += "\nStatus: BANK";
@@ -2140,9 +2157,11 @@ PopupPayload SfmlGuiManager::buildLandingPayload(const MovementPayload& movement
         }
 
         if (const auto* street = dynamic_cast<const StreetProperty*>(&property)) {
-            const Player& currentPlayer = m_engine.getCurrentPlayer();
+            const Player* buildActor = movingPlayer != nullptr
+                ? movingPlayer
+                : &m_engine.getCurrentPlayer();
             const PropertyManager::BuildOption buildOption =
-                m_engine.getPropertyManager().getBuildOption(currentPlayer, *street);
+                m_engine.getPropertyManager().getBuildOption(*buildActor, *street);
 
             if (buildOption == PropertyManager::BuildOption::HOUSE) {
                 payload.actionItems.push_back(
@@ -2150,15 +2169,6 @@ PopupPayload SfmlGuiManager::buildLandingPayload(const MovementPayload& movement
             } else if (buildOption == PropertyManager::BuildOption::HOTEL) {
                 payload.actionItems.push_back(
                     PopupActionItem{"build_property", "+ Hotel", "assets/images/ui/btn_rumah.png", true});
-            }
-        }
-
-        // Tampilkan tombol Gadai jika pemain memiliki properti ini dan bisa digadaikan
-        if (!hasBuyOption && movingPlayer != nullptr && property.getOwner() == movingPlayer) {
-            const Player& currentPlayer = m_engine.getCurrentPlayer();
-            if (m_engine.getPropertyManager().canMortgage(currentPlayer, property)) {
-                payload.actionItems.push_back(
-                    PopupActionItem{"gadai_property", "Gadai", "assets/images/ui/btn_cancel.png", true});
             }
         }
 
@@ -2307,6 +2317,7 @@ void SfmlGuiManager::showBackendErrorPopup(const std::string& message, std::func
 }
 
 void SfmlGuiManager::resumeFlowAfterPopup() {
+    m_landingMovementContext.reset();
     refreshFromEngineState();
     m_currentState = GuiState::IDLE;
     m_mainUi->setRollVisible(true);

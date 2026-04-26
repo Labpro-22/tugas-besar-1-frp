@@ -1053,10 +1053,7 @@ void DynamicPopupBox::rebuildActionSprites() {
         spriteAction.actionId = item.actionId;
 
         std::vector<std::string> candidates;
-        if (!item.texturePath.empty()) {
-            candidates.push_back(item.texturePath);
-            candidates.push_back(joinPath(m_uiDir, item.texturePath));
-        }
+        // Keep popup buttons visually uniform (white style) to avoid mixed/black button artifacts.
         candidates.push_back(m_uiDir + "popup_option_normal.png");
 
         if (!loadTextureWithFallback(spriteAction.texture, candidates)) {
@@ -1080,25 +1077,15 @@ void DynamicPopupBox::rebuildActionSprites() {
 void DynamicPopupBox::updateActionVisuals() {
     for (auto& action : m_actionSprites) {
         if (!action.enabled) {
-            action.sprite.setColor(sf::Color(180, 180, 180));
+            action.sprite.setColor(sf::Color(220, 220, 220));
             action.label.setFillColor(sf::Color(120, 120, 120));
             continue;
         }
 
-        if (action.pressed) {
-            action.sprite.setColor(sf::Color(230, 208, 170));
-            action.label.setFillColor(sf::Color(46, 38, 30));
-            continue;
-        }
-
-        if (action.hovered) {
-            action.sprite.setColor(sf::Color(255, 245, 220));
-            action.label.setFillColor(sf::Color(46, 38, 30));
-            continue;
-        }
-
         action.sprite.setColor(sf::Color::White);
-        action.label.setFillColor(sf::Color(53, 45, 36));
+        action.label.setFillColor((action.pressed || action.hovered)
+            ? sf::Color(46, 38, 30)
+            : sf::Color(53, 45, 36));
     }
 }
 

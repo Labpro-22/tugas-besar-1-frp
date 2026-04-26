@@ -171,9 +171,11 @@ void BoardRenderer::updatePlayerInfo(const std::vector<const void*>& playerPtrs)
 }
 
 std::string BoardRenderer::getPlayerColorName(int playerIndex) const {
-    static const std::vector<std::string> kColors = {"blue", "red", "yellow", "green"};
+    // Keep this order aligned with piece color order in PieceRenderer/MainUI:
+    // P1 red, P2 blue, P3 green, P4 yellow.
+    static const std::vector<std::string> kColors = {"red", "blue", "green", "yellow"};
     if (playerIndex < 0 || playerIndex >= static_cast<int>(kColors.size())) {
-        return "blue";
+        return "red";
     }
     return kColors[static_cast<size_t>(playerIndex)];
 }
@@ -552,6 +554,15 @@ void BoardRenderer::drawRailroadTileContent(sf::RenderTexture& tileCanvas,
                      Typography::kRailroadPriceMaxSize,
                      Typography::kRailroadPriceMinSize,
                      Theme::TextDark);
+
+    // Ownership marker for railroad: 1 house icon in owner color.
+    if (property.getOwner() != nullptr) {
+        const void* ownerPtr = static_cast<const void*>(property.getOwner());
+        auto it = m_playerIndexMap.find(ownerPtr);
+        const int playerIdx = (it != m_playerIndexMap.end()) ? it->second : 0;
+        const std::string colorName = getPlayerColorName(playerIdx);
+        drawBuildingIcons(tileCanvas, "house:" + colorName, 1, logicalSize);
+    }
 }
 
 void BoardRenderer::drawUtilityTileContent(sf::RenderTexture& tileCanvas,
@@ -565,6 +576,15 @@ void BoardRenderer::drawUtilityTileContent(sf::RenderTexture& tileCanvas,
                      Typography::kUtilityPriceMaxSize,
                      Typography::kUtilityPriceMinSize,
                      Theme::TextDark);
+
+    // Ownership marker for utility: 1 house icon in owner color.
+    if (property.getOwner() != nullptr) {
+        const void* ownerPtr = static_cast<const void*>(property.getOwner());
+        auto it = m_playerIndexMap.find(ownerPtr);
+        const int playerIdx = (it != m_playerIndexMap.end()) ? it->second : 0;
+        const std::string colorName = getPlayerColorName(playerIdx);
+        drawBuildingIcons(tileCanvas, "house:" + colorName, 1, logicalSize);
+    }
 }
 
 void BoardRenderer::drawTaxTileContent(sf::RenderTexture& tileCanvas,
