@@ -1,4 +1,0 @@
-LOAD
-test/tc05_runs/TC05_03.txt
-ATUR_DADU 1 1
-KELUAR

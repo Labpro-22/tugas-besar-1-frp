@@ -1,5 +1,0 @@
-LOAD
-test/tc03_runs/TC03_05.txt
-BAYAR_DENDA
-ATUR_DADU 5 5
-KELUAR

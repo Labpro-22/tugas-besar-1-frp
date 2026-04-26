@@ -1,4 +1,0 @@
-LOAD
-test/tc04_runs/TC04_07.txt
-CETAK_AKTA JKT
-KELUAR

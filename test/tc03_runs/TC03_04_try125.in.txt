@@ -1,5 +1,0 @@
-LOAD
-test/tc03_runs/TC03_04_try125.txt
-ATUR_DADU 1 1
-AKHIRI_GILIRAN
-KELUAR

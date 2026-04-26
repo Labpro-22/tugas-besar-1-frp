@@ -1,7 +1,0 @@
-LOAD
-test/tc04_runs/TC04_04.txt
-ATUR_DADU 1 2
-PASS
-BID_MIN
-PASS
-KELUAR

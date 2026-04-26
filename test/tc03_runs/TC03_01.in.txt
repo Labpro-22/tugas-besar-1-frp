@@ -1,4 +1,0 @@
-LOAD
-test/tc03_runs/TC03_01.txt
-ATUR_DADU 2 2
-KELUAR

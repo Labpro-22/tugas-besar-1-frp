@@ -1,4 +1,0 @@
-LOAD
-test/tc04_runs/TC04_12.txt
-ATUR_DADU 4 5
-KELUAR

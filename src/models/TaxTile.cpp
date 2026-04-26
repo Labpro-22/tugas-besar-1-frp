@@ -53,10 +53,30 @@ void TaxTile::handlePPH(Player& player, GameEngine& engine) {
         << "(Pilih sebelum jumlah kekayaanmu dihitung!)";
     const std::string promptKey = "pph_" + player.getUsername();
 
+    // Build a descriptive prompt: the body text spells out each option, and the
+    // buttons themselves carry human-readable labels (instead of bare "1"/"2").
+    // The answer keys remain "1" and "2" so the parsing logic below is unchanged.
+    std::ostringstream promptMsg;
+    promptMsg << "Opsi pembayaran PPH:\n"
+              << "  1. Bayar flat M" << taxFlat << "\n"
+              << "  2. Bayar " << percentage << "% dari total kekayaan\n";
+
+    auto buildPphPrompt = [&]() {
+        PromptRequest pr;
+        pr.id       = promptKey;
+        pr.title    = "Pajak Penghasilan";
+        pr.message  = promptMsg.str();
+        pr.options  = {
+            PromptOption{"1", "Opsi 1"},
+            PromptOption{"2", "Opsi 2"}
+        };
+        pr.required = true;
+        return pr;
+    };
+
     if (!engine.hasPromptAnswer(promptKey)) {
         engine.pushEvent(GameEventType::TAX, UiTone::WARNING, "PPH", msg.str());
-        engine.pushPrompt(promptKey,
-            "Opsi PPH mana yang ingin kamu pilih? (1/2):", {"1", "2"});
+        engine.pushPrompt(buildPphPrompt());
         engine.setPendingContinuation([this, &player, &engine]() {
             CommandResult resumed;
             handlePPH(player, engine);
@@ -69,8 +89,7 @@ void TaxTile::handlePPH(Player& player, GameEngine& engine) {
     if (ans != "1" && ans != "2") {
         engine.pushEvent(GameEventType::TAX, UiTone::WARNING,
             "Input Tidak Valid", "Masukkan 1 (flat) atau 2 (persentase).");
-        engine.pushPrompt(promptKey,
-            "Opsi PPH mana yang ingin kamu pilih? (1/2):", {"1", "2"});
+        engine.pushPrompt(buildPphPrompt());
         engine.setPendingContinuation([this, &player, &engine]() {
             CommandResult resumed;
             handlePPH(player, engine);
