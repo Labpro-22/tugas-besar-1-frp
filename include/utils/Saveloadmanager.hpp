@@ -20,7 +20,7 @@ class SaveLoadManager {
     private:
         Gamestateserializer serializer;
 
-        // Validasi: ekstensi harus .txt/.nmp, path tidak boleh kosong
+        // Validasi: ekstensi harus .txt, path tidak boleh kosong
         void validatePath(const std::string& filename) const;
 
         // Baca seluruh isi file ke dalam string

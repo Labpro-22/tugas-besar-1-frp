@@ -5,6 +5,7 @@
 #include "../../include/core/EffectManager.hpp"
 #include "../../include/core/PropertyManager.hpp"
 #include "../../include/core/TransactionLogger.hpp"
+#include "../../include/models/ActionCard.hpp"
 #include "../../include/models/Board.hpp"
 #include "../../include/models/CardTile.hpp"
 #include "../../include/models/FestivalTile.hpp"
@@ -89,6 +90,26 @@ std::string normalizePlayerNameKey(std::string raw) {
     std::transform(raw.begin(), raw.end(), raw.begin(),
         [](unsigned char c) { return static_cast<char>(std::toupper(c)); });
     return raw;
+}
+
+std::string normalizeSaveLoadFilename(std::string raw,
+                                      const std::string& fallbackName) {
+    raw = trimCopy(raw);
+    if (raw.empty()) {
+        raw = fallbackName;
+    }
+
+    std::filesystem::path path(raw);
+    if (path.extension().empty() ||
+        path.extension() != ".txt") {
+        path.replace_extension(".txt");
+    }
+
+    if (!path.has_parent_path()) {
+        path = std::filesystem::path("data") / path;
+    }
+
+    return path.generic_string();
 }
 
 string toPlayerStatusString(const Player& p) {
@@ -252,6 +273,56 @@ void appendForwardPath(std::vector<int>& path, int& index, int steps, int boardS
     }
 }
 
+bool isChanceNearestRailroadPayload(const std::string& payload) {
+    return payload == "CHANCE_NEAREST_RAILROAD" || payload == "CHANCE_STASIUN";
+}
+
+bool isChanceMoveBackPayload(const std::string& payload) {
+    return payload == "CHANCE_MOVE_BACK" || payload == "CHANCE_MUNDUR";
+}
+
+bool isChanceFestivalPayload(const std::string& payload) {
+    return payload == "CHANCE_FESTIVAL";
+}
+
+std::vector<int> buildMovementPathForChancePayload(const std::string& payload,
+                                                   int fromIndex,
+                                                   int finalIndex,
+                                                   int boardSize) {
+    std::vector<int> path;
+    if (boardSize <= 0 || finalIndex < 0) {
+        return path;
+    }
+
+    if (isChanceMoveBackPayload(payload)) {
+        int cursor = fromIndex;
+        for (int i = 0; i < 3; ++i) {
+            cursor = (cursor - 1 + boardSize) % boardSize;
+            path.push_back(cursor);
+        }
+        return path;
+    }
+
+    if (isChanceNearestRailroadPayload(payload) || isChanceFestivalPayload(payload)) {
+        int cursor = fromIndex;
+        for (int i = 0; i < boardSize; ++i) {
+            cursor = (cursor + 1) % boardSize;
+            path.push_back(cursor);
+            if (cursor == finalIndex) {
+                break;
+            }
+        }
+        if (path.empty() || path.back() != finalIndex) {
+            path.clear();
+            path.push_back(finalIndex);
+        }
+        return path;
+    }
+
+    path.push_back(finalIndex);
+    return path;
+}
+
 bool doesForwardPathVisitIndex(int fromIndex, int steps, int boardSize, int targetIndex) {
     if (boardSize <= 0 || steps <= 0) {
         return false;
@@ -370,6 +441,7 @@ GameEngine::GameEngine()
       extraRollAllowedThisTurn(false),
       paidJailFineThisTurn(false),
       gameOverReason_(GameOverReason::NONE),
+      chancePromptNonce_(0),
       maxTurn(0),
       initialBalance(1000),
       goSalary(200),
@@ -446,6 +518,7 @@ CommandResult GameEngine::startNewGame(int nPlayers, std::vector<std::string> na
     gameOver = false;
     gameStarted = true;
     gameOverReason_ = GameOverReason::NONE;
+    chancePromptNonce_ = 0;
     resetTurnActionFlags();
 
     if (logger) {
@@ -489,8 +562,11 @@ CommandResult GameEngine::loadGame(const std::string& filename) {
         initBoard();
     }
 
+    const std::string targetFilename =
+        normalizeSaveLoadFilename(filename, "data/file_save.txt");
+
     SaveLoadManager saveLoad;
-    saveLoad.loadInto(*this, filename);
+    saveLoad.loadInto(*this, targetFilename);
 
     if (logger) {
         logger->setCurrentTurn(turnManager.getTurnNumber());
@@ -498,6 +574,7 @@ CommandResult GameEngine::loadGame(const std::string& filename) {
 
     gameStarted = true;
     gameOverReason_ = GameOverReason::NONE;
+    chancePromptNonce_ = 0;
     resetTurnActionFlags();
 
     CommandResult result;
@@ -506,7 +583,7 @@ CommandResult GameEngine::loadGame(const std::string& filename) {
         GameEventType::SAVE_LOAD,
         UiTone::SUCCESS,
         "Berhasil Memuat",
-        "State permainan berhasil dimuat dari file: " + filename);
+        "State permainan berhasil dimuat dari file: " + targetFilename);
     return result;
 }
 
@@ -535,10 +612,8 @@ SaveGameResult GameEngine::saveGame(const std::string& filename, bool overwrite)
         return result;
     }
 
-    std::string targetFilename = trimCopy(filename);
-    if (targetFilename.empty()) {
-        targetFilename = "game_save.nmp";
-    }
+    std::string targetFilename =
+        normalizeSaveLoadFilename(filename, "data/file_save.txt");
 
     std::error_code ec;
     if (!overwrite && std::filesystem::exists(targetFilename, ec) && !ec) {
@@ -850,8 +925,9 @@ CommandResult GameEngine::processCommand(const Command& cmd) {
     case CommandType::SAVE:
     {
         result.commandName = "SIMPAN";
-        const string filename = cmd.args.empty() ? "file_save.txt" : cmd.args[0];
-        const SaveGameResult saveResult = saveGame(filename, true);
+        const std::string requestedFilename =
+            cmd.args.empty() ? "data/file_save.txt" : cmd.args[0];
+        const SaveGameResult saveResult = saveGame(requestedFilename, true);
         if (saveResult.status != SaveGameStatus::SUCCESS) {
             throw GameException(saveResult.message.empty()
                                     ? "Gagal menyimpan permainan."
@@ -861,7 +937,7 @@ CommandResult GameEngine::processCommand(const Command& cmd) {
             GameEventType::SAVE_LOAD,
             UiTone::SUCCESS,
             "Berhasil Menyimpan",
-            "Menyimpan permainan...\nPermainan berhasil disimpan ke: " + filename
+            "Menyimpan permainan...\n" + saveResult.message
         );
         flushEvents(result);
         return result;
@@ -869,10 +945,13 @@ CommandResult GameEngine::processCommand(const Command& cmd) {
 
     case CommandType::LOAD:
     {
-        const string filename = cmd.args.empty() ? "file_save.txt" : cmd.args[0];
-        result = loadGame(filename);
+        const std::string requestedFilename =
+            cmd.args.empty() ? "data/file_save.txt" : cmd.args[0];
+        const std::string normalizedFilename =
+            normalizeSaveLoadFilename(requestedFilename, "data/file_save.txt");
+        result = loadGame(requestedFilename);
         if (logger && !players.empty()) {
-            logger->logLoad(getCurrentPlayer().getUsername(), filename);
+            logger->logLoad(getCurrentPlayer().getUsername(), normalizedFilename);
         }
         // Change the success message loaded by loadGame() method to have exact wording.
         result.events.clear();
@@ -1479,6 +1558,10 @@ CommandResult GameEngine::processCommand(const Command& cmd) {
         const int moveCardSteps =
             (cardType == "MoveCard" && hand[idx] != nullptr) ? hand[idx]->getValue() : 0;
         const std::string cardName = hand[idx]->getTypeName();
+        int teleportTargetPosition = -1;
+        if (cardType == "TeleportCard" && board != nullptr && !target.empty()) {
+            teleportTargetPosition = board->getIndexOf(target);
+        }
 
         // Simpan posisi target sebelum kartu Lasso diaplikasikan
         int lassoTargetOriginalPos = -1;
@@ -1504,11 +1587,13 @@ CommandResult GameEngine::processCommand(const Command& cmd) {
                 int pathCursor = originalPosition;
                 appendForwardPath(movement.path, pathCursor, moveCardSteps, board->size());
             } else if (cardType == "TeleportCard") {
-                const int forwardSteps =
-                    (finalPosition - originalPosition + board->size()) % board->size();
-                if (forwardSteps > 0) {
-                    int pathCursor = originalPosition;
-                    appendForwardPath(movement.path, pathCursor, forwardSteps, board->size());
+                // Teleport harus selalu menampilkan fase landing awal terlebih dahulu
+                // (termasuk saat landing tersebut memicu kartu Chance).
+                if (teleportTargetPosition >= 0) {
+                    movement.path.push_back(teleportTargetPosition);
+                }
+                if (finalPosition != teleportTargetPosition) {
+                    movement.path.push_back(finalPosition);
                 }
             }
 
@@ -1875,6 +1960,68 @@ void GameEngine::continueTurnAfterDiceResolution(CommandResult& flowResult,
 }
 
 void GameEngine::handleLanding(Player& p, Tile& t) {
+    if (CardTile* cardTile = dynamic_cast<CardTile*>(&t)) {
+        if (cardTile->getDrawType() == CardDrawType::CHANCE) {
+            if (!cardManager) {
+                throw GameException("CardManager belum diinisialisasi.");
+            }
+
+            std::shared_ptr<ActionCard> drawnChanceCard =
+                cardManager->drawChanceCardForPrompt(p, *this);
+            const std::string cardPayload =
+                cardManager->getChanceCardPayload(drawnChanceCard);
+
+            const std::string playerName = p.getUsername();
+            const std::string promptKey =
+                "draw_chance_card_" + playerName + "_" +
+                std::to_string(++chancePromptNonce_);
+
+            PromptRequest prompt;
+            prompt.id = promptKey;
+            prompt.title = "KARTU KESEMPATAN";
+            prompt.message =
+                "Pemain " + playerName + " mengambil kartu Kesempatan:\n\"" +
+                drawnChanceCard->getDescription() +
+                "\"\nKlik Lanjut untuk menjalankan efek kartu.";
+            prompt.options.push_back(PromptOption{"OK", "Lanjut"});
+            pushPrompt(prompt);
+
+            setPendingContinuation([this, promptKey, playerName, cardPayload, drawnChanceCard]() {
+                CommandResult resumed;
+
+                if (hasPromptAnswer(promptKey)) {
+                    (void)consumePromptAnswer(promptKey);
+                }
+
+                Player* player = getPlayerByName(playerName);
+                if (!player) {
+                    throw GameException("Pemain untuk resolusi kartu Kesempatan tidak ditemukan.");
+                }
+
+                const int fromIndex = player->getPosition();
+                cardManager->resolvePendingChanceCard(*player, *this, drawnChanceCard);
+                const int finalIndex = player->getPosition();
+
+                if (board != nullptr && finalIndex != fromIndex) {
+                    MovementPayload movement;
+                    movement.playerIndex = findPlayerIndexByPointer(players, player);
+                    movement.playerName = player->getUsername();
+                    movement.fromIndex = fromIndex;
+                    movement.path = buildMovementPathForChancePayload(
+                        cardPayload, fromIndex, finalIndex, board->size());
+                    if (movement.path.empty() || movement.path.back() != finalIndex) {
+                        movement.path.push_back(finalIndex);
+                    }
+                    movement.toIndex = movement.path.back();
+                    resumed.movement = movement;
+                }
+
+                return resumed;
+            });
+            return;
+        }
+    }
+
     t.onLand(p, *this);
 }
 
@@ -2258,6 +2405,7 @@ void GameEngine::applySnapshot(const GameSnapshot& snapshot) {
     maxTurn = snapshot.getMaxTurn();
     gameOver = false;
     gameOverReason_ = GameOverReason::NONE;
+    chancePromptNonce_ = 0;
 
     for (Player* p : players) {
         delete p;

@@ -34,6 +34,10 @@ public:
     void initializeDecks();
 
     void drawChanceCard(Player& player, GameEngine& game);
+    std::shared_ptr<ActionCard> drawChanceCardForPrompt(Player& player, GameEngine& game);
+    void resolvePendingChanceCard(Player& player, GameEngine& game,
+                                  const std::shared_ptr<ActionCard>& card);
+    std::string getChanceCardPayload(const std::shared_ptr<ActionCard>& card) const;
     void drawCommunityCard(Player& player, GameEngine& game);
 
     std::shared_ptr<SkillCard> drawSkillCard(Player& player);

@@ -8,6 +8,27 @@
 #include "../../include/models/SkillCards.hpp"
 #include "../../include/utils/GameException.hpp"
 
+namespace {
+std::string chancePayloadFromCard(const std::shared_ptr<ActionCard>& card) {
+    if (card && dynamic_cast<const GoToNearestRailroadCard*>(card.get()) != nullptr) {
+        return "CHANCE_STASIUN";
+    }
+    if (card && dynamic_cast<const MoveBackCard*>(card.get()) != nullptr) {
+        return "CHANCE_MUNDUR";
+    }
+    if (card && dynamic_cast<const GoToJailCard*>(card.get()) != nullptr) {
+        return "CHANCE_PENJARA";
+    }
+    if (card && dynamic_cast<const GetOutOfJailCard*>(card.get()) != nullptr) {
+        return "CHANCE_BEBAS_PENJARA";
+    }
+    if (card && dynamic_cast<const GoToNearestFestivalCard*>(card.get()) != nullptr) {
+        return "CHANCE_FESTIVAL";
+    }
+    return "";
+}
+} // namespace
+
 CardManager::CardManager()
     : rng(std::random_device{}()), initialized(false) {}
 
@@ -62,21 +83,15 @@ void CardManager::randomizeSkillCardOnDraw(const std::shared_ptr<SkillCard>& car
 }
 
 void CardManager::drawChanceCard(Player& player, GameEngine& game) {
+    std::shared_ptr<ActionCard> card = drawChanceCardForPrompt(player, game);
+    resolvePendingChanceCard(player, game, card);
+}
+
+std::shared_ptr<ActionCard> CardManager::drawChanceCardForPrompt(Player& player, GameEngine& game) {
     if (!initialized) initializeDecks();
 
     std::shared_ptr<ActionCard> card = chanceDeck.draw();
-    std::string cardCode;
-    if (card && dynamic_cast<const GoToNearestRailroadCard*>(card.get()) != nullptr) {
-        cardCode = "CHANCE_STASIUN";
-    } else if (card && dynamic_cast<const MoveBackCard*>(card.get()) != nullptr) {
-        cardCode = "CHANCE_MUNDUR";
-    } else if (card && dynamic_cast<const GoToJailCard*>(card.get()) != nullptr) {
-        cardCode = "CHANCE_PENJARA";
-    } else if (card && dynamic_cast<const GetOutOfJailCard*>(card.get()) != nullptr) {
-        cardCode = "CHANCE_BEBAS_PENJARA";
-    } else if (card && dynamic_cast<const GoToNearestFestivalCard*>(card.get()) != nullptr) {
-        cardCode = "CHANCE_FESTIVAL";
-    }
+    const std::string cardCode = chancePayloadFromCard(card);
 
     game.pushEvent(GameEventType::CARD, UiTone::INFO,
         "Kartu Kesempatan",
@@ -86,8 +101,21 @@ void CardManager::drawChanceCard(Player& player, GameEngine& game) {
         cardCode);
     game.getLogger().logDrawCard(player.getUsername(), "Kesempatan",
                                  card->getDescription());
+    return card;
+}
+
+void CardManager::resolvePendingChanceCard(Player& player, GameEngine& game,
+                                           const std::shared_ptr<ActionCard>& card) {
+    if (!card) {
+        throw GameException("Kartu Kesempatan tidak valid.");
+    }
+
     card->apply(player, game);
     chanceDeck.discard(card);
+}
+
+std::string CardManager::getChanceCardPayload(const std::shared_ptr<ActionCard>& card) const {
+    return chancePayloadFromCard(card);
 }
 
 void CardManager::drawCommunityCard(Player& player, GameEngine& game) {

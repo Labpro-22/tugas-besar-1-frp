@@ -55,7 +55,8 @@ BoardRenderer::BoardRenderer(float boardSize, const sf::Font& font, sf::Vector2f
       m_origin(origin),
       m_defaultFont(font),
       m_hasBebasFont(false),
-      m_renderCanvasesReady(false) {
+      m_renderCanvasesReady(false),
+      m_activeTileCount(40) {
     m_hasBebasFont = m_bebasFont.loadFromFile("assets/fonts/BebasNeue-Regular.ttf");
     if (!m_hasBebasFont) {
         std::cerr << "[WARN] Font BebasNeue tidak ditemukan. Fallback ke font default GUI.\n";
@@ -168,6 +169,10 @@ void BoardRenderer::updatePlayerInfo(const std::vector<const void*>& playerPtrs)
             m_playerIndexMap[playerPtrs[i]] = i;
         }
     }
+}
+
+void BoardRenderer::setTileCountHint(int totalTiles) const {
+    syncDynamicLayout(totalTiles);
 }
 
 std::string BoardRenderer::getPlayerColorName(int playerIndex) const {
@@ -286,7 +291,7 @@ bool BoardRenderer::loadAllTileTextures() {
     return success;
 }
 
-bool BoardRenderer::initializeRenderCanvases() {
+bool BoardRenderer::initializeRenderCanvases() const {
     const bool portraitOk = m_portraitCanvas.create(static_cast<unsigned int>(std::round(m_tileSize)),
                                                     static_cast<unsigned int>(std::round(m_cornerSize)));
     const bool cornerOk = m_cornerCanvas.create(static_cast<unsigned int>(std::round(m_cornerSize)),
@@ -349,26 +354,165 @@ const sf::Texture* BoardRenderer::resolveBaseTexture(const Tile& tile) const {
     return nullptr;
 }
 
+int BoardRenderer::clampTotalTiles(int totalTiles) const {
+    return std::max(0, totalTiles);
+}
+
+std::array<int, 4> BoardRenderer::computeSideSteps(int totalTiles) const {
+    std::array<int, 4> sideSteps = {0, 0, 0, 0};
+    const int clamped = clampTotalTiles(totalTiles);
+    if (clamped <= 0) {
+        return sideSteps;
+    }
+    if (clamped < 4) {
+        for (int i = 0; i < clamped; ++i) {
+            sideSteps[static_cast<size_t>(i)] = 1;
+        }
+        return sideSteps;
+    }
+
+    const int base = clamped / 4;
+    const int remainder = clamped % 4;
+    for (int side = 0; side < 4; ++side) {
+        sideSteps[static_cast<size_t>(side)] = base + ((side < remainder) ? 1 : 0);
+    }
+    return sideSteps;
+}
+
+std::array<int, 4> BoardRenderer::computeCornerIndices(int totalTiles) const {
+    std::array<int, 4> corners = {0, 0, 0, 0};
+    const int clamped = clampTotalTiles(totalTiles);
+    if (clamped <= 0) {
+        return corners;
+    }
+
+    const std::array<int, 4> sideSteps = computeSideSteps(clamped);
+    corners[1] = corners[0] + sideSteps[0];
+    corners[2] = corners[1] + sideSteps[1];
+    corners[3] = corners[2] + sideSteps[2];
+
+    for (int i = 1; i < 4; ++i) {
+        corners[static_cast<size_t>(i)] =
+            std::min(corners[static_cast<size_t>(i)], clamped - 1);
+    }
+    return corners;
+}
+
+float BoardRenderer::computeSideTileLength(int side, int totalTiles) const {
+    if (side < 0 || side > 3) {
+        return m_tileSize;
+    }
+
+    const float centerSpan = std::max(0.0f, m_boardSize - (2.0f * m_cornerSize));
+    const std::array<int, 4> sideSteps = computeSideSteps(totalTiles);
+    const int innerTiles = std::max(0, sideSteps[static_cast<size_t>(side)] - 1);
+
+    if (innerTiles <= 0) {
+        return centerSpan;
+    }
+    return centerSpan / static_cast<float>(innerTiles);
+}
+
+void BoardRenderer::syncDynamicLayout(int totalTiles) const {
+    const int clamped = clampTotalTiles(totalTiles);
+    if (m_activeTileCount != clamped) {
+        m_activeTileCount = clamped;
+    }
+
+    if (clamped <= 0) {
+        return;
+    }
+
+    const std::array<int, 4> sideSteps = computeSideSteps(clamped);
+    float maxSideLength = 0.0f;
+    for (int side = 0; side < 4; ++side) {
+        if (sideSteps[static_cast<size_t>(side)] > 1) {
+            maxSideLength = std::max(maxSideLength, computeSideTileLength(side, clamped));
+        }
+    }
+    if (maxSideLength <= 0.0f) {
+        maxSideLength = m_tileSize;
+    }
+
+    if (std::fabs(maxSideLength - m_tileSize) > 0.5f) {
+        m_tileSize = maxSideLength;
+        initializeRenderCanvases();
+    }
+}
+
+int BoardRenderer::getSideForIndex(int index) const {
+    const int totalTiles = clampTotalTiles(m_activeTileCount);
+    if (totalTiles <= 0) {
+        return 0;
+    }
+
+    int normalized = index % totalTiles;
+    if (normalized < 0) {
+        normalized += totalTiles;
+    }
+
+    const std::array<int, 4> corners = computeCornerIndices(totalTiles);
+    if (normalized > corners[0] && normalized < corners[1]) return 0; // Bawah
+    if (normalized > corners[1] && normalized < corners[2]) return 1; // Kiri
+    if (normalized > corners[2] && normalized < corners[3]) return 2; // Atas
+    return 3; // Kanan
+}
+
 sf::Vector2f BoardRenderer::getTilePosition(int index) const {
-    if (index == 0) return {m_origin.x + m_boardSize - m_cornerSize, m_origin.y + m_boardSize - m_cornerSize};
-    if (index > 0 && index < 10)
-        return {m_origin.x + m_boardSize - m_cornerSize - (index * m_tileSize), m_origin.y + m_boardSize - m_cornerSize};
-    if (index == 10) return {m_origin.x + 0.0f, m_origin.y + m_boardSize - m_cornerSize};
-    if (index > 10 && index < 20)
-        return {m_origin.x + 0.0f, m_origin.y + m_boardSize - m_cornerSize - ((index - 10) * m_tileSize)};
-    if (index == 20) return {m_origin.x + 0.0f, m_origin.y + 0.0f};
-    if (index > 20 && index < 30)
-        return {m_origin.x + m_cornerSize + ((index - 21) * m_tileSize), m_origin.y + 0.0f};
-    if (index == 30) return {m_origin.x + m_boardSize - m_cornerSize, m_origin.y + 0.0f};
-    if (index > 30 && index < 40)
-        return {m_origin.x + m_boardSize - m_cornerSize, m_origin.y + m_cornerSize + ((index - 31) * m_tileSize)};
-    return {m_origin.x + 0.0f, m_origin.y + 0.0f};
+    syncDynamicLayout(m_activeTileCount);
+    const int totalTiles = clampTotalTiles(m_activeTileCount);
+    if (totalTiles <= 0) {
+        return m_origin;
+    }
+
+    int normalized = index % totalTiles;
+    if (normalized < 0) {
+        normalized += totalTiles;
+    }
+
+    const std::array<int, 4> corners = computeCornerIndices(totalTiles);
+    const float rightX = m_origin.x + m_boardSize - m_cornerSize;
+    const float bottomY = m_origin.y + m_boardSize - m_cornerSize;
+
+    if (normalized == corners[0]) return {rightX, bottomY};
+    if (normalized > corners[0] && normalized < corners[1]) {
+        const int offset = normalized - corners[0];
+        return {rightX - (static_cast<float>(offset) * computeSideTileLength(0, totalTiles)),
+                bottomY};
+    }
+    if (normalized == corners[1]) return {m_origin.x, bottomY};
+    if (normalized > corners[1] && normalized < corners[2]) {
+        const int offset = normalized - corners[1];
+        return {m_origin.x,
+                bottomY - (static_cast<float>(offset) * computeSideTileLength(1, totalTiles))};
+    }
+    if (normalized == corners[2]) return {m_origin.x, m_origin.y};
+    if (normalized > corners[2] && normalized < corners[3]) {
+        const int offset = normalized - corners[2] - 1;
+        return {m_origin.x + m_cornerSize +
+                    (static_cast<float>(offset) * computeSideTileLength(2, totalTiles)),
+                m_origin.y};
+    }
+    if (normalized == corners[3]) return {rightX, m_origin.y};
+
+    const int offset = normalized - corners[3] - 1;
+    return {rightX,
+            m_origin.y + m_cornerSize +
+                (static_cast<float>(offset) * computeSideTileLength(3, totalTiles))};
 }
 
 sf::Vector2f BoardRenderer::getTileSize(int index) const {
-    if (index % 10 == 0) return {m_cornerSize, m_cornerSize};
-    if ((index > 0 && index < 10) || (index > 20 && index < 30)) return {m_tileSize, m_cornerSize};
-    return {m_cornerSize, m_tileSize};
+    syncDynamicLayout(m_activeTileCount);
+    if (isCornerIndex(index)) {
+        return {m_cornerSize, m_cornerSize};
+    }
+
+    const int side = getSideForIndex(index);
+    const float sideLength = computeSideTileLength(side, m_activeTileCount);
+    if (side == 0 || side == 2) {
+        return {sideLength, m_cornerSize};
+    }
+    return {m_cornerSize, sideLength};
 }
 
 sf::Vector2f BoardRenderer::getTileCenter(int index) const {
@@ -382,26 +526,31 @@ sf::Vector2f BoardRenderer::getBoardCenter() const {
 }
 
 bool BoardRenderer::isCornerIndex(int index) const {
-    return index % 10 == 0;
+    const int totalTiles = clampTotalTiles(m_activeTileCount);
+    if (totalTiles <= 0) {
+        return false;
+    }
+
+    int normalized = index % totalTiles;
+    if (normalized < 0) {
+        normalized += totalTiles;
+    }
+
+    const std::array<int, 4> corners = computeCornerIndices(totalTiles);
+    return normalized == corners[0] || normalized == corners[1] ||
+           normalized == corners[2] || normalized == corners[3];
 }
 
 float BoardRenderer::getTileRotation(int index) const {
     if (isCornerIndex(index)) {
         return 0.0f;
     }
-    if (index > 0 && index < 10) {
-        return 0.0f;
-    }
-    if (index > 10 && index < 20) {
-        return 90.0f;
-    }
-    if (index > 20 && index < 30) {
-        return 180.0f;
-    }
-    if (index > 30 && index < 40) {
-        return -90.0f;
-    }
-    return 0.0f;
+
+    const int side = getSideForIndex(index);
+    if (side == 0) return 0.0f;    // Bawah
+    if (side == 1) return 90.0f;   // Kiri
+    if (side == 2) return 180.0f;  // Atas
+    return 270.0f;                 // Kanan
 }
 
 BoardRenderer::TileRenderInfo BoardRenderer::buildTileRenderInfo(int index) const {
@@ -410,7 +559,14 @@ BoardRenderer::TileRenderInfo BoardRenderer::buildTileRenderInfo(int index) cons
     info.worldSize = getTileSize(index);
     info.rotationDeg = getTileRotation(index);
     info.isCorner = isCornerIndex(index);
-    info.logicalSize = info.isCorner ? info.worldSize : sf::Vector2f(m_tileSize, m_cornerSize);
+    info.logicalSize = info.isCorner ? sf::Vector2f(m_cornerSize, m_cornerSize)
+                                     : sf::Vector2f(m_tileSize, m_cornerSize);
+    info.spriteScale = sf::Vector2f(1.0f, 1.0f);
+    if (!info.isCorner && m_tileSize > 0.0f) {
+        const int side = getSideForIndex(index);
+        const float sideLength = computeSideTileLength(side, m_activeTileCount);
+        info.spriteScale.x = sideLength / m_tileSize;
+    }
     return info;
 }
 
@@ -696,6 +852,7 @@ void BoardRenderer::drawTile(sf::RenderWindow& window, const Tile& tile, int ind
 
     sf::Sprite tileSprite(tileCanvas.getTexture());
     tileSprite.setOrigin(info.logicalSize.x / 2.0f, info.logicalSize.y / 2.0f);
+    tileSprite.setScale(info.spriteScale);
     tileSprite.setPosition(info.worldPosition.x + (info.worldSize.x / 2.0f),
                            info.worldPosition.y + (info.worldSize.y / 2.0f));
     tileSprite.setRotation(info.rotationDeg);
@@ -705,19 +862,17 @@ void BoardRenderer::drawTile(sf::RenderWindow& window, const Tile& tile, int ind
 }
 
 void BoardRenderer::render(sf::RenderWindow& window, const Board& board) const {
+    syncDynamicLayout(board.size());
+
     sf::RectangleShape boardBg({m_boardSize, m_boardSize});
     boardBg.setPosition(m_origin);
     boardBg.setFillColor(sf::Color(245, 250, 245));
     window.draw(boardBg);
     window.draw(m_centerSprite);
 
-    const int tileCount = std::min(40, board.size());
+    const int tileCount = board.size();
     for (int index = 0; index < tileCount; ++index) {
         drawTile(window, board.getTileByIndex(index), index);
-    }
-
-    for (int index = tileCount; index < 40; ++index) {
-        drawTileBorder(window, index);
     }
 
     drawCenterBorder(window);

@@ -62,6 +62,10 @@ bool isChanceTimedMovementPayload(const std::string& payload) {
            isChanceFestivalPayload(payload);
 }
 
+bool isDrawChancePromptId(const std::string& promptId) {
+    return promptId.rfind("draw_chance_card_", 0) == 0;
+}
+
 std::vector<int> buildFollowUpPathForTimedChance(const std::string& payload,
                                                  int fromIndex,
                                                  int finalIndex,
@@ -191,12 +195,19 @@ std::string trimCopy(std::string value) {
 std::string normalizeSaveFilename(std::string value, const std::string& fallbackName) {
     value = trimCopy(value);
     if (value.empty()) {
-        return fallbackName;
+        value = fallbackName;
     }
-    if (value.find('.') == std::string::npos) {
-        value += ".nmp";
+
+    std::filesystem::path path(value);
+    if (path.extension().empty() ||
+        path.extension() != ".txt") {
+        path.replace_extension(".txt");
     }
-    return value;
+    if (!path.has_parent_path()) {
+        path = std::filesystem::path("data") / path;
+    }
+
+    return path.generic_string();
 }
 
 int parseSkillTargetPromptCardIndex(const std::string& promptId) {
@@ -611,7 +622,7 @@ void SfmlGuiManager::openLoadFilenamePopupFromMenu() {
     PromptRequest prompt;
     prompt.id = "file_input_load";
     prompt.title = "MUAT PERMAINAN";
-    prompt.message = "Masukkan nama file untuk dimuat (default: game_save.txt).";
+    prompt.message = "Masukkan nama file untuk dimuat (default: data/file_save.txt).";
     prompt.required = false;
     prompt.options = {
         PromptOption{"SUBMIT", "Muat"},
@@ -626,7 +637,7 @@ void SfmlGuiManager::openLoadFilenamePopupFromMenu() {
             return;
         }
 
-        const std::string filename = normalizeSaveFilename(cleanAnswer, "game_save.nmp");
+        const std::string filename = normalizeSaveFilename(cleanAnswer, "data/file_save.txt");
         submitLoadFromMenuRequest(filename);
     });
 }
@@ -694,6 +705,7 @@ void SfmlGuiManager::showStartMenuMessagePopup(const std::string& title, const s
 
 void SfmlGuiManager::initializeGameAndPieces() {
     const auto& players = m_engine.getPlayers();
+    m_boardView->setTileCountHint(m_engine.getBoard().size());
     static const std::array<sf::Color, 6> pieceColors = {
         sf::Color(216, 83, 79),
         sf::Color(84, 143, 224),
@@ -734,7 +746,7 @@ void SfmlGuiManager::openSaveFilenamePopup() {
     PromptRequest prompt;
     prompt.id = "file_input_save";
     prompt.title = "SIMPAN PERMAINAN";
-    prompt.message = "Masukkan nama file save (default: game_save.nmp).";
+    prompt.message = "Masukkan nama file save (default: data/file_save.txt).";
     prompt.required = false;
     prompt.options = {
         PromptOption{"SUBMIT", "Simpan"},
@@ -754,7 +766,7 @@ void SfmlGuiManager::openSaveFilenamePopup() {
             return;
         }
 
-        const std::string filename = normalizeSaveFilename(cleanAnswer, "game_save.nmp");
+        const std::string filename = normalizeSaveFilename(cleanAnswer, "data/file_save.txt");
         submitSaveRequest(filename, false);
     });
 }
@@ -937,6 +949,13 @@ void SfmlGuiManager::enqueuePrompts(const std::vector<PromptRequest>& prompts) {
 }
 
 void SfmlGuiManager::processNextPrompt() {
+    // Jangan proses prompt saat fase animasi masih berjalan.
+    if (m_currentState == GuiState::ANIMATING_DICE ||
+        m_currentState == GuiState::SHOWING_TIMED_CARD ||
+        (m_currentState == GuiState::ANIMATING_PIECE && m_deferredMovement.has_value())) {
+        return;
+    }
+
     if (m_popupBox->isVisible()) {
         return;
     }
@@ -1600,11 +1619,18 @@ std::string SfmlGuiManager::mapCardEventPayloadToImage(const std::string& payloa
 }
 
 void SfmlGuiManager::enqueueCardEventPopups(const CommandResult& result) {
+    const bool hasDeferredDrawChancePrompt = std::any_of(
+        result.prompts.begin(), result.prompts.end(), [](const PromptRequest& prompt) {
+            return isDrawChancePromptId(prompt.id);
+        });
+    const bool hasSplitTimedChanceMovement = m_splitMovementForCommand.has_value();
+
     for (const GameEvent& event : result.events) {
         if (event.type != GameEventType::CARD || event.eventPayload.empty()) {
             continue;
         }
-        if (isChanceTimedMovementPayload(event.eventPayload)) {
+        if (isChanceTimedMovementPayload(event.eventPayload) &&
+            (hasSplitTimedChanceMovement || !hasDeferredDrawChancePrompt)) {
             continue;
         }
 
@@ -1656,10 +1682,12 @@ void SfmlGuiManager::dismissTimedCardEventPopup() {
     if (m_timedCardMovementAfterPopup.has_value()) {
         const MovementPayload followUpMovement = m_timedCardMovementAfterPopup.value();
         m_timedCardMovementAfterPopup.reset();
+        m_currentState = GuiState::IDLE;
         beginMovementAnimation(followUpMovement);
         return;
     }
 
+    m_currentState = GuiState::IDLE;
     updateAllPanels();
     processNextPrompt();
 }
