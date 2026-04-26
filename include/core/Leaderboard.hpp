@@ -1,12 +1,13 @@
 #pragma once
 
 #include <string>
+#include <vector>
 
 class Player;
 
 class Leaderboard {
 public:
-    static Leaderboard fromPlayer(const Player& player, int rank, int tokenIndex);
+    static std::vector<Leaderboard> generateRankings(const std::vector<Player*>& players);
 
     int getRank() const { return rank_; }
     const std::string& getPlayerName() const { return playerName_; }
@@ -17,6 +18,9 @@ public:
     int getTokenIndex() const { return tokenIndex_; }
 
 private:
+    static Leaderboard fromPlayer(const Player& player, int rank, int tokenIndex);
+    static bool isTie(const Player& a, const Player& b);
+
     Leaderboard(int rank,
                 std::string playerName,
                 int cash,

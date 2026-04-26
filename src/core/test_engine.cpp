@@ -20,6 +20,8 @@ using std::map;
 using std::string;
 using std::vector;
 
+void run_leaderboard_tests();
+
 namespace {
 
 struct PrimitivePlayer {
@@ -444,6 +446,7 @@ int main() {
 
     cout << "=== Primitive Test Engine (Serializer Harness) ===\n";
     cout << "Tujuan: uji serializer/save/load lewat command interaktif.\n";
+    run_leaderboard_tests();
     printHelp();
 
     string line;

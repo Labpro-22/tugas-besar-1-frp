@@ -2054,71 +2054,7 @@ const std::vector<Player*>& GameEngine::getPlayers() const {
 }
 
 std::vector<Leaderboard> GameEngine::getLeaderboard() const {
-    struct RankKey {
-        int cash = 0;
-        int propertyCount = 0;
-        int cardCount = 0;
-        std::string playerName;
-    };
-
-    struct LeaderboardRow {
-        RankKey key;
-        const Player* player = nullptr;
-        int tokenIndex = -1;
-    };
-
-    std::vector<LeaderboardRow> rows;
-    rows.reserve(players.size());
-
-    for (size_t i = 0; i < players.size(); ++i) {
-        const Player* player = players[i];
-        if (!player) {
-            continue;
-        }
-
-        LeaderboardRow row;
-        row.player = player;
-        row.tokenIndex = static_cast<int>(i);
-        row.key.cash = player->getMoney();
-        row.key.propertyCount = player->countProperties();
-        row.key.cardCount = player->countCards();
-        row.key.playerName = player->getUsername();
-        rows.push_back(row);
-    }
-
-    std::sort(rows.begin(), rows.end(), [](const LeaderboardRow& a, const LeaderboardRow& b) {
-        if (a.key.cash != b.key.cash) {
-            return a.key.cash > b.key.cash;
-        }
-        if (a.key.propertyCount != b.key.propertyCount) {
-            return a.key.propertyCount > b.key.propertyCount;
-        }
-        if (a.key.cardCount != b.key.cardCount) {
-            return a.key.cardCount > b.key.cardCount;
-        }
-        return a.key.playerName < b.key.playerName;
-    });
-
-    std::vector<Leaderboard> ranked;
-    ranked.reserve(rows.size());
-    int previousRank = 0;
-    for (size_t i = 0; i < rows.size(); ++i) {
-        int rank = static_cast<int>(i) + 1;
-        if (i > 0) {
-            const RankKey& prev = rows[i - 1].key;
-            const RankKey& now = rows[i].key;
-            if (prev.cash == now.cash &&
-                prev.propertyCount == now.propertyCount &&
-                prev.cardCount == now.cardCount) {
-                rank = previousRank;
-            }
-        }
-
-        ranked.push_back(
-            Leaderboard::fromPlayer(*rows[i].player, rank, rows[i].tokenIndex));
-        previousRank = rank;
-    }
-    return ranked;
+    return Leaderboard::generateRankings(players);
 }
 
 Board& GameEngine::getBoard() {
