@@ -115,12 +115,12 @@ void LeaderboardView::updateFromLeaderboard(const std::vector<Leaderboard>& rows
 
     for (const Leaderboard& row : rows) {
         m_rows.push_back(Row{
-            row.rank,
-            row.playerName,
-            row.cash,
-            row.asset,
-            row.propertyCount,
-            row.tokenIndex});
+            row.getRank(),
+            row.getPlayerName(),
+            row.getCash(),
+            row.getAsset(),
+            row.getPropertyCount(),
+            row.getTokenIndex()});
     }
 }
 

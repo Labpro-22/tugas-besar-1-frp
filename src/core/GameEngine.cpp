@@ -2058,11 +2058,13 @@ std::vector<Leaderboard> GameEngine::getLeaderboard() const {
         int cash = 0;
         int propertyCount = 0;
         int cardCount = 0;
+        std::string playerName;
     };
 
     struct LeaderboardRow {
         RankKey key;
-        Leaderboard dto;
+        const Player* player = nullptr;
+        int tokenIndex = -1;
     };
 
     std::vector<LeaderboardRow> rows;
@@ -2075,14 +2077,12 @@ std::vector<Leaderboard> GameEngine::getLeaderboard() const {
         }
 
         LeaderboardRow row;
+        row.player = player;
+        row.tokenIndex = static_cast<int>(i);
         row.key.cash = player->getMoney();
         row.key.propertyCount = player->countProperties();
         row.key.cardCount = player->countCards();
-        row.dto.playerName = player->getUsername();
-        row.dto.cash = row.key.cash;
-        row.dto.asset = player->getAssetValue();
-        row.dto.propertyCount = row.key.propertyCount;
-        row.dto.tokenIndex = static_cast<int>(i);
+        row.key.playerName = player->getUsername();
         rows.push_back(row);
     }
 
@@ -2096,9 +2096,12 @@ std::vector<Leaderboard> GameEngine::getLeaderboard() const {
         if (a.key.cardCount != b.key.cardCount) {
             return a.key.cardCount > b.key.cardCount;
         }
-        return a.dto.playerName < b.dto.playerName;
+        return a.key.playerName < b.key.playerName;
     });
 
+    std::vector<Leaderboard> ranked;
+    ranked.reserve(rows.size());
+    int previousRank = 0;
     for (size_t i = 0; i < rows.size(); ++i) {
         int rank = static_cast<int>(i) + 1;
         if (i > 0) {
@@ -2107,16 +2110,13 @@ std::vector<Leaderboard> GameEngine::getLeaderboard() const {
             if (prev.cash == now.cash &&
                 prev.propertyCount == now.propertyCount &&
                 prev.cardCount == now.cardCount) {
-                rank = rows[i - 1].dto.rank;
+                rank = previousRank;
             }
         }
-        rows[i].dto.rank = rank;
-    }
 
-    std::vector<Leaderboard> ranked;
-    ranked.reserve(rows.size());
-    for (const LeaderboardRow& row : rows) {
-        ranked.push_back(row.dto);
+        ranked.push_back(
+            Leaderboard::fromPlayer(*rows[i].player, rank, rows[i].tokenIndex));
+        previousRank = rank;
     }
     return ranked;
 }
