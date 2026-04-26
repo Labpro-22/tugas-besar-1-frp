@@ -166,8 +166,6 @@ void TransactionLogger::logLoad(const std::string& username,
     log(username, "LOAD", "Permainan dimuat dari: " + filename);
 }
 
-// ── Ambil log ─────────────────────────────────────────────────────────────────
-
 const std::vector<LogEntry>& TransactionLogger::getAllLogs() const {
     return logs;
 }
