@@ -124,12 +124,12 @@ void MainUI::syncTabActiveState() {
     m_tabInventory.setEnabled(mode != AssetPanel::Mode::INVENTORY);
 }
 
-void MainUI::updateData(const std::vector<Player*>& players,
+void MainUI::updateData(const std::vector<Leaderboard>& leaderboardRows,
                         const Player& currentPlayer,
                         const std::string& systemLog,
                         int currentTurn,
                         int maxTurn) {
-    m_leaderboardView.updateFromPlayers(players);
+    m_leaderboardView.updateFromLeaderboard(leaderboardRows);
     m_assetPanel.updateData(currentPlayer, systemLog);
     std::string turnLabel = std::to_string(currentTurn) + "/";
     if (maxTurn > 0) {

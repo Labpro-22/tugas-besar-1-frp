@@ -6,7 +6,7 @@
 #include <string>
 #include <vector>
 
-class Player;
+#include "../core/Leaderboard.hpp"
 
 namespace viewsGUI {
 class LeaderboardView {
@@ -16,16 +16,17 @@ public:
     bool loadAssets(const std::string& panelPath);
     void setPosition(sf::Vector2f position);
 
-    void updateFromPlayers(const std::vector<Player*>& players);
+    void updateFromLeaderboard(const std::vector<Leaderboard>& rows);
 
     void render(sf::RenderWindow& window) const;
 
 private:
     struct Row {
+        int rank;
         std::string player;
         int cash;
-        int assets;
-        int total;
+        int asset;
+        int propertyCount;
         int tokenIndex;
     };
 
@@ -40,6 +41,7 @@ private:
 
     sf::Vector2f m_position;
 
+    void drawHeaderText(sf::RenderWindow& window) const;
     void drawRowText(sf::RenderWindow& window, const Row& row, int rowIndex) const;
 };
 } // namespace viewsGUI

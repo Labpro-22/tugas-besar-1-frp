@@ -1,0 +1,43 @@
+2 15
+2
+Reinsen 15000 GO ACTIVE
+0
+Lawan 1500 GO ACTIVE
+0
+Reinsen Lawan
+Reinsen
+28
+GRT street Reinsen OWNED 1 0 1
+TSK street Reinsen OWNED 1 0 1
+GBR railroad Reinsen OWNED 1 0 0
+BGR street Reinsen OWNED 1 0 1
+DPK street Reinsen OWNED 1 0 1
+BKS street Reinsen OWNED 1 0 1
+MGL street Reinsen OWNED 1 0 1
+PLN utility Reinsen OWNED 1 0 0
+SOL street Reinsen OWNED 1 0 1
+YOG street Reinsen OWNED 1 0 1
+STB railroad Reinsen OWNED 1 0 0
+MAL street Reinsen OWNED 1 0 1
+SMG street Reinsen OWNED 1 0 1
+SBY street Reinsen OWNED 1 0 1
+MKS street Reinsen OWNED 1 0 1
+BLP street Reinsen OWNED 1 0 1
+MND street Reinsen OWNED 1 0 1
+TUG railroad Reinsen OWNED 1 0 0
+PLB street Reinsen OWNED 1 0 1
+PKB street Reinsen OWNED 1 0 1
+PAM utility Reinsen OWNED 1 0 0
+MED street Reinsen OWNED 1 0 1
+BDG street Reinsen OWNED 1 0 1
+DEN street Reinsen OWNED 1 0 1
+MTR street Reinsen OWNED 1 0 1
+GUB railroad Reinsen OWNED 1 0 0
+JKT street Reinsen OWNED 1 0 1
+IKN street Reinsen OWNED 1 0 1
+3
+MoveCard
+DiscountCard
+ShieldCard
+1
+1 Lawan DADU Lempar: 1+1=2 mendarat di GO

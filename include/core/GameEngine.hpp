@@ -8,6 +8,7 @@
 #include "../../include/core/TurnManager.hpp"
 #include "../../include/core/Command.hpp"
 #include "../../include/core/CommandResult.hpp"
+#include "../../include/core/Leaderboard.hpp"
 
 class Player;
 class Board;
@@ -135,6 +136,7 @@ class GameEngine{
         Player* getPlayerByName(const std::string& name);
         std::vector<Player*> getActivePlayers() const;
         const std::vector<Player*>& getPlayers() const;
+        std::vector<Leaderboard> getLeaderboard() const;
     
         Board& getBoard();
         Dice& getDice();

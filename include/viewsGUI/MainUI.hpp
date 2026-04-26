@@ -7,6 +7,7 @@
 #include <string>
 #include <vector>
 
+#include "../core/Leaderboard.hpp"
 #include "AssetPanel.hpp"
 #include "LeaderboardView.hpp"
 #include "SpriteButton.hpp"
@@ -22,7 +23,7 @@ public:
 
     void setOnRollDice(std::function<void()> callback);
 
-    void updateData(const std::vector<Player*>& players,
+    void updateData(const std::vector<Leaderboard>& leaderboardRows,
                     const Player& currentPlayer,
                     const std::string& systemLog,
                     int currentTurn,

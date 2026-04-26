@@ -1512,7 +1512,7 @@ void SfmlGuiManager::consumeResult(const CommandResult& result, bool syncPiecePo
     }
 
     const Player& current = m_engine.getCurrentPlayer();
-    m_mainUi->updateData(m_engine.getPlayers(),
+    m_mainUi->updateData(m_engine.getLeaderboard(),
                          current,
                          logPanelText,
                          m_engine.getCurrentTurn(),
@@ -1536,7 +1536,7 @@ void SfmlGuiManager::refreshFromEngineState() {
     }
 
     const Player& current = m_engine.getCurrentPlayer();
-    m_mainUi->updateData(m_engine.getPlayers(),
+    m_mainUi->updateData(m_engine.getLeaderboard(),
                          current,
                          logPanelText,
                          m_engine.getCurrentTurn(),

@@ -2053,6 +2053,74 @@ const std::vector<Player*>& GameEngine::getPlayers() const {
     return players;
 }
 
+std::vector<Leaderboard> GameEngine::getLeaderboard() const {
+    struct RankKey {
+        int cash = 0;
+        int propertyCount = 0;
+        int cardCount = 0;
+    };
+
+    struct LeaderboardRow {
+        RankKey key;
+        Leaderboard dto;
+    };
+
+    std::vector<LeaderboardRow> rows;
+    rows.reserve(players.size());
+
+    for (size_t i = 0; i < players.size(); ++i) {
+        const Player* player = players[i];
+        if (!player) {
+            continue;
+        }
+
+        LeaderboardRow row;
+        row.key.cash = player->getMoney();
+        row.key.propertyCount = player->countProperties();
+        row.key.cardCount = player->countCards();
+        row.dto.playerName = player->getUsername();
+        row.dto.cash = row.key.cash;
+        row.dto.asset = player->getAssetValue();
+        row.dto.propertyCount = row.key.propertyCount;
+        row.dto.tokenIndex = static_cast<int>(i);
+        rows.push_back(row);
+    }
+
+    std::sort(rows.begin(), rows.end(), [](const LeaderboardRow& a, const LeaderboardRow& b) {
+        if (a.key.cash != b.key.cash) {
+            return a.key.cash > b.key.cash;
+        }
+        if (a.key.propertyCount != b.key.propertyCount) {
+            return a.key.propertyCount > b.key.propertyCount;
+        }
+        if (a.key.cardCount != b.key.cardCount) {
+            return a.key.cardCount > b.key.cardCount;
+        }
+        return a.dto.playerName < b.dto.playerName;
+    });
+
+    for (size_t i = 0; i < rows.size(); ++i) {
+        int rank = static_cast<int>(i) + 1;
+        if (i > 0) {
+            const RankKey& prev = rows[i - 1].key;
+            const RankKey& now = rows[i].key;
+            if (prev.cash == now.cash &&
+                prev.propertyCount == now.propertyCount &&
+                prev.cardCount == now.cardCount) {
+                rank = rows[i - 1].dto.rank;
+            }
+        }
+        rows[i].dto.rank = rank;
+    }
+
+    std::vector<Leaderboard> ranked;
+    ranked.reserve(rows.size());
+    for (const LeaderboardRow& row : rows) {
+        ranked.push_back(row.dto);
+    }
+    return ranked;
+}
+
 Board& GameEngine::getBoard() {
     if (!board) throw GameException("Board belum diinisialisasi");
     return *board;
