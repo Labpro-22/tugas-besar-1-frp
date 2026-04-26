@@ -74,10 +74,12 @@ private:
     std::optional<std::string> m_timedCardImageAfterLanding;
     std::optional<MovementPayload> m_timedCardMovementAfterPopup;
     std::optional<MovementPayload> m_splitMovementForCommand;
+    std::optional<MovementPayload> m_landingMovementContext;
     std::string m_pendingSaveFilename;
     std::string m_uiBasePath;
     std::string m_preTurnSkillGateKey;
     bool m_preTurnSkillHandled;
+    std::string m_jailPopupShownForKey;
 
     void processEvents();
     void update(sf::Time dt);
@@ -117,6 +119,7 @@ private:
     void processNextPrompt();
     std::string buildCurrentTurnGateKey() const;
     void maybeShowPreTurnSkillPopup();
+    void maybeShowJailPopup();
 
     void consumeResult(const CommandResult& result, bool syncPiecePositions);
     void cacheTimedChanceTransition(const CommandResult& result);

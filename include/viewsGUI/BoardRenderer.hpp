@@ -12,6 +12,7 @@ class Board;
 class Tile;
 class Property;
 class TaxTile;
+class Player;
 
 namespace viewsGUI {
 class BoardRenderer {
@@ -19,6 +20,8 @@ public:
     BoardRenderer(float boardSize, const sf::Font& font, sf::Vector2f origin = sf::Vector2f(0.0f, 0.0f));
 
     bool loadAssets(const std::string& assetDirectory);
+    bool loadIconTextures(const std::string& uiDirectory);
+    void updatePlayerInfo(const std::vector<const void*>& playerPtrs);
 
     void render(sf::RenderWindow& window, const Board& board) const;
 
@@ -47,6 +50,7 @@ private:
     sf::Texture m_centerTexture;
     sf::Sprite m_centerSprite;
     std::unordered_map<std::string, sf::Texture> m_textureByKey;
+    std::unordered_map<const void*, int> m_playerIndexMap;
     mutable sf::RenderTexture m_portraitCanvas;
     mutable sf::RenderTexture m_cornerCanvas;
     bool m_renderCanvasesReady;
@@ -79,6 +83,11 @@ private:
     void drawStreetTileContent(sf::RenderTexture& tileCanvas,
                                const Property& property,
                                const sf::Vector2f& logicalSize) const;
+    void drawBuildingIcons(sf::RenderTexture& tileCanvas,
+                           const std::string& textureKey,
+                           int count,
+                           const sf::Vector2f& logicalSize) const;
+    std::string getPlayerColorName(int playerIndex) const;
     void drawRailroadTileContent(sf::RenderTexture& tileCanvas,
                                  const Property& property,
                                  const sf::Vector2f& logicalSize) const;

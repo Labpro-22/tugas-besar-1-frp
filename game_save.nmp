@@ -1,0 +1,67 @@
+1 15
+4
+P1 400 GO ACTIVE
+1
+DemolitionCard
+P2 400 GBR ACTIVE
+1
+MoveCard 11
+P3 400 SMG ACTIVE
+1
+TeleportCard
+P4 260 MGL ACTIVE
+1
+DiscountCard 25
+P4 P2 P3 P1
+P1
+28
+GRT street BANK BANK 1 0 0
+TSK street BANK BANK 1 0 0
+GBR railroad P2 OWNED 1 0 0
+BGR street BANK BANK 1 0 0
+DPK street BANK BANK 1 0 0
+BKS street BANK BANK 1 0 0
+MGL street P4 OWNED 1 0 0
+PLN utility P3 OWNED 1 0 0
+SOL street BANK BANK 1 0 0
+YOG street BANK BANK 1 0 0
+STB railroad BANK BANK 1 0 0
+MAL street BANK BANK 1 0 0
+SMG street P3 OWNED 1 0 0
+SBY street BANK BANK 1 0 0
+MKS street BANK BANK 1 0 0
+BLP street BANK BANK 1 0 0
+MND street BANK BANK 1 0 0
+TUG railroad BANK BANK 1 0 0
+PLB street BANK BANK 1 0 0
+PKB street BANK BANK 1 0 0
+PAM utility BANK BANK 1 0 0
+MED street BANK BANK 1 0 0
+BDG street BANK BANK 1 0 0
+DEN street BANK BANK 1 0 0
+MTR street BANK BANK 1 0 0
+GUB railroad BANK BANK 1 0 0
+JKT street BANK BANK 1 0 0
+IKN street BANK BANK 1 0 0
+11
+LassoCard
+DiscountCard
+MoveCard
+DemolitionCard
+ShieldCard
+MoveCard
+LassoCard
+MoveCard
+ShieldCard
+DiscountCard
+TeleportCard
+9
+1 P4 DADU Lempar: 5+6=11 -> mendarat di MGL
+1 P4 BELI Beli MAGELANG (MGL) seharga M140
+1 P2 DADU Lempar: 4+1=5 -> mendarat di GBR
+1 P2 RAILROAD STASIUN_GAMBIR (GBR) kini milik P2 (otomatis - RAILROAD)
+1 P3 DADU Lempar: 6+6=12 -> mendarat di PLN
+1 P3 UTILITY PLN (PLN) kini milik P3 (otomatis - UTILITY)
+1 P3 DADU Lempar: 1+5=6 -> mendarat di SMG
+1 P3 LELANG_BID Bid M0 untuk SMG
+1 P3 LELANG_HASIL P3 memenangkan lelang SMG seharga M0

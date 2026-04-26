@@ -22,6 +22,7 @@ private:
     bool atLeastOneBid;
     bool auctionActive;
     int currentAuctionIndex;
+    std::string auctionTriggerName;
     std::vector<Player*> auctionOrder;
 
     std::vector<Player*> buildAuctionOrder(Player* triggerPlayer,

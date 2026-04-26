@@ -153,6 +153,7 @@ class GameEngine{
         int getGoSalary() const;
         int getJailFine() const;
         int getCurrentTurn() const;
+        bool isDiceRolledThisTurn() const;
 
         GameSnapshot createSnapshot() const;
         void applySnapshot(const GameSnapshot& snapshot);
