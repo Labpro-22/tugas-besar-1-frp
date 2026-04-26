@@ -62,6 +62,10 @@ bool isChanceTimedMovementPayload(const std::string& payload) {
            isChanceFestivalPayload(payload);
 }
 
+bool isDrawChancePromptId(const std::string& promptId) {
+    return promptId.rfind("draw_chance_card_", 0) == 0;
+}
+
 std::vector<int> buildFollowUpPathForTimedChance(const std::string& payload,
                                                  int fromIndex,
                                                  int finalIndex,
@@ -694,6 +698,7 @@ void SfmlGuiManager::showStartMenuMessagePopup(const std::string& title, const s
 
 void SfmlGuiManager::initializeGameAndPieces() {
     const auto& players = m_engine.getPlayers();
+    m_boardView->setTileCountHint(m_engine.getBoard().size());
     static const std::array<sf::Color, 6> pieceColors = {
         sf::Color(216, 83, 79),
         sf::Color(84, 143, 224),
@@ -937,6 +942,13 @@ void SfmlGuiManager::enqueuePrompts(const std::vector<PromptRequest>& prompts) {
 }
 
 void SfmlGuiManager::processNextPrompt() {
+    // Jangan proses prompt saat fase animasi masih berjalan.
+    if (m_currentState == GuiState::ANIMATING_DICE ||
+        m_currentState == GuiState::SHOWING_TIMED_CARD ||
+        (m_currentState == GuiState::ANIMATING_PIECE && m_deferredMovement.has_value())) {
+        return;
+    }
+
     if (m_popupBox->isVisible()) {
         return;
     }
@@ -1600,11 +1612,18 @@ std::string SfmlGuiManager::mapCardEventPayloadToImage(const std::string& payloa
 }
 
 void SfmlGuiManager::enqueueCardEventPopups(const CommandResult& result) {
+    const bool hasDeferredDrawChancePrompt = std::any_of(
+        result.prompts.begin(), result.prompts.end(), [](const PromptRequest& prompt) {
+            return isDrawChancePromptId(prompt.id);
+        });
+    const bool hasSplitTimedChanceMovement = m_splitMovementForCommand.has_value();
+
     for (const GameEvent& event : result.events) {
         if (event.type != GameEventType::CARD || event.eventPayload.empty()) {
             continue;
         }
-        if (isChanceTimedMovementPayload(event.eventPayload)) {
+        if (isChanceTimedMovementPayload(event.eventPayload) &&
+            (hasSplitTimedChanceMovement || !hasDeferredDrawChancePrompt)) {
             continue;
         }
 
@@ -1656,10 +1675,12 @@ void SfmlGuiManager::dismissTimedCardEventPopup() {
     if (m_timedCardMovementAfterPopup.has_value()) {
         const MovementPayload followUpMovement = m_timedCardMovementAfterPopup.value();
         m_timedCardMovementAfterPopup.reset();
+        m_currentState = GuiState::IDLE;
         beginMovementAnimation(followUpMovement);
         return;
     }
 
+    m_currentState = GuiState::IDLE;
     updateAllPanels();
     processNextPrompt();
 }

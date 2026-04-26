@@ -14,6 +14,7 @@ class Player;
 class Board;
 class Tile;
 class Property;
+class ActionCard;
 class Bank;
 class AuctionManager;
 class BankruptcyManager;
@@ -52,6 +53,7 @@ class GameEngine{
         bool extraRollAllowedThisTurn;
         bool paidJailFineThisTurn;
         GameOverReason gameOverReason_;
+        int chancePromptNonce_;
         int maxTurn;
         int initialBalance;
         int goSalary;

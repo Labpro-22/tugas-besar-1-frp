@@ -3,6 +3,7 @@
 
 #include <SFML/Graphics.hpp>
 
+#include <array>
 #include <iostream>
 #include <string>
 #include <unordered_map>
@@ -24,6 +25,7 @@ public:
     void updatePlayerInfo(const std::vector<const void*>& playerPtrs);
 
     void render(sf::RenderWindow& window, const Board& board) const;
+    void setTileCountHint(int totalTiles) const;
 
     sf::Vector2f getTilePosition(int index) const;
     sf::Vector2f getTileSize(int index) const;
@@ -35,13 +37,14 @@ private:
         sf::Vector2f logicalSize;
         sf::Vector2f worldPosition;
         sf::Vector2f worldSize;
+        sf::Vector2f spriteScale;
         float rotationDeg;
         bool isCorner;
     };
 
     float m_boardSize;
     float m_cornerSize;
-    float m_tileSize;
+    mutable float m_tileSize;
     sf::Vector2f m_origin;
     sf::Font m_defaultFont;
     sf::Font m_bebasFont;
@@ -53,16 +56,24 @@ private:
     std::unordered_map<const void*, int> m_playerIndexMap;
     mutable sf::RenderTexture m_portraitCanvas;
     mutable sf::RenderTexture m_cornerCanvas;
-    bool m_renderCanvasesReady;
+    mutable bool m_renderCanvasesReady;
+    mutable int m_activeTileCount;
 
     bool loadAllTileTextures();
     bool loadTexturesFromDirectory(const std::string& directoryPath,
                                    const std::string& keyPrefix);
-    bool initializeRenderCanvases();
+    bool initializeRenderCanvases() const;
     bool loadTexture(const std::string& key, const std::string& path);
     const sf::Texture* getTexture(const std::string& key) const;
     const sf::Texture* getStreetTextureWithFallback(const std::string& code) const;
     const sf::Texture* resolveBaseTexture(const Tile& tile) const;
+
+    std::array<int, 4> computeSideSteps(int totalTiles) const;
+    std::array<int, 4> computeCornerIndices(int totalTiles) const;
+    float computeSideTileLength(int side, int totalTiles) const;
+    int clampTotalTiles(int totalTiles) const;
+    void syncDynamicLayout(int totalTiles) const;
+    int getSideForIndex(int index) const;
 
     TileRenderInfo buildTileRenderInfo(int index) const;
     bool isCornerIndex(int index) const;
