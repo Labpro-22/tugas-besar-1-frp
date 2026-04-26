@@ -252,6 +252,42 @@ void appendForwardPath(std::vector<int>& path, int& index, int steps, int boardS
     }
 }
 
+bool doesForwardPathVisitIndex(int fromIndex, int steps, int boardSize, int targetIndex) {
+    if (boardSize <= 0 || steps <= 0) {
+        return false;
+    }
+
+    int cursor = fromIndex;
+    for (int i = 0; i < steps; ++i) {
+        cursor = (cursor + 1) % boardSize;
+        if (cursor == targetIndex) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool shouldAwardPassGoOnForwardMove(const Board& board,
+                                    int fromIndex,
+                                    int steps,
+                                    int destinationIndex) {
+    if (steps <= 0 || !board.hasTile("GO")) {
+        return false;
+    }
+
+    const int boardSize = board.size();
+    if (boardSize <= 0) {
+        return false;
+    }
+
+    const int goIndex = board.getIndexOf("GO");
+    if (!doesForwardPathVisitIndex(fromIndex, steps, boardSize, goIndex)) {
+        return false;
+    }
+
+    return destinationIndex != goIndex;
+}
+
 void validatePlayerInventoryForSave(const Player& player) {
     const auto& hand = player.getHandCards();
     if (hand.size() > 3) {
@@ -724,13 +760,15 @@ CommandResult GameEngine::processCommand(const Command& cmd) {
 
                 current.setStatus(PlayerStatus::ACTIVE);
                 current.setJailTurns(0);
+                current.resetConsecutiveDoubles();
+                extraRollAllowedThisTurn = true;
                 flowResult.addEvent(
-                    GameEventType::SYSTEM,
+                    GameEventType::TURN,
                     UiTone::SUCCESS,
                     "Double Penjara",
                     current.getUsername() +
-                        " mendapatkan double dan keluar dari penjara!");
-                continueTurnAfterDiceResolution(flowResult, current, total, rolledDouble);
+                        " mendapatkan double dan keluar dari penjara. "
+                        "Silakan lempar dadu lagi untuk bergerak.");
                 return;
             }
         }
@@ -1589,6 +1627,56 @@ CommandResult GameEngine::executeTurn() {
     resetTurnActionFlags();
 
     if (cardManager && !next.isBankrupt()) {
+        if (cardManager->hasPendingSkillDrop(next)) {
+            const std::string pendingUsername = next.getUsername();
+            const std::shared_ptr<SkillCard> pendingCard =
+                cardManager->peekPendingSkillDraw(next);
+            const std::vector<std::string> labels =
+                cardManager->getPendingSkillDropOptions(next);
+
+            std::vector<PromptOption> options;
+            options.reserve(labels.size());
+            for (size_t i = 0; i < labels.size(); ++i) {
+                options.push_back(PromptOption{
+                    std::to_string(i),
+                    std::to_string(i + 1) + ". " + labels[i]});
+            }
+
+            std::string message =
+                "Masih ada kartu skill ke-4 yang belum diproses dari awal giliran sebelumnya.";
+            if (pendingCard) {
+                message += "\nKartu baru yang menunggu: " + pendingCard->getTypeName() + ".";
+            }
+            message +=
+                "\nPilih 1 kartu kemampuan lama di slot 1-3 untuk dibuang. "
+                "Kartu baru akan otomatis masuk menggantikannya.";
+
+            result.addEvent(
+                GameEventType::CARD,
+                UiTone::WARNING,
+                "Kartu Kemampuan",
+                message
+            );
+
+            PromptRequest prompt;
+            prompt.id = "skill_drop_" + pendingUsername;
+            prompt.title = "KARTU KEMAMPUAN";
+            prompt.message =
+                "Kartu kemampuan penuh (maksimal 3). "
+                "Slot 4 inventory khusus GetOutOfJailCard. "
+                "Pilih 1 kartu kemampuan lama di slot 1-3 untuk dibuang. "
+                "Kartu baru akan otomatis masuk menggantikannya. "
+                "Kartu baru dan kartu kesempatan tidak bisa dipilih.";
+            prompt.options = std::move(options);
+            pushPrompt(prompt);
+            setPendingContinuation([this, pendingUsername]() {
+                return handlePendingSkillDropPrompt(pendingUsername);
+            });
+
+            flushEvents(result);
+            return result;
+        }
+
         std::shared_ptr<SkillCard> drawn = cardManager->drawSkillCard(next);
         if (cardManager->hasPendingSkillDrop(next)) {
             const std::string pendingUsername = next.getUsername();
@@ -1676,8 +1764,8 @@ CommandResult GameEngine::moveCurrentPlayer(int steps) {
     const int boardSize = board->size();
     const int oldPos = player.getPosition();
     player.move(steps, boardSize);
-    const bool crossedGo = (player.getPosition() < oldPos);
-    Tile& landing = board->getTileByIndex(player.getPosition());
+    const int newPos = player.getPosition();
+    Tile& landing = board->getTileByIndex(newPos);
     const bool landedOnGoToJail = (landing.getCode() == "PPJ");
 
     result.addEvent(
@@ -1687,7 +1775,8 @@ CommandResult GameEngine::moveCurrentPlayer(int steps) {
         "Memajukan Bidak " + player.getUsername() + " sebanyak " + std::to_string(steps) + " petak..."
     );
 
-    if (crossedGo && !landedOnGoToJail && landing.getCode() != "GO") {
+    if (!landedOnGoToJail &&
+        shouldAwardPassGoOnForwardMove(*board, oldPos, steps, newPos)) {
         awardPassGoSalary(player);
         result.addEvent(
             GameEventType::MONEY,

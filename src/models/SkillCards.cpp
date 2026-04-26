@@ -10,6 +10,31 @@
 #include "../../include/models/Tile.hpp"
 #include "../../include/utils/GameException.hpp"
 
+namespace {
+bool shouldAwardPassGoOnForwardMove(const Board& board,
+                                    int fromIndex,
+                                    int toIndex) {
+    if (!board.hasTile("GO")) {
+        return false;
+    }
+
+    const int steps = board.distanceTo(fromIndex, toIndex);
+    if (steps <= 0) {
+        return false;
+    }
+
+    const int goIndex = board.getIndexOf("GO");
+    int cursor = fromIndex;
+    for (int i = 0; i < steps; ++i) {
+        cursor = (cursor + 1) % board.size();
+        if (cursor == goIndex) {
+            return toIndex != goIndex;
+        }
+    }
+    return false;
+}
+}
+
 MoveCard::MoveCard(int value)
     : SkillCard("Maju sejumlah petak.", value, 0) {}
 
@@ -22,7 +47,7 @@ void MoveCard::apply(Player& player, GameEngine& game) {
     const int oldPos = player.getPosition();
     player.move(value, board.size());
 
-    if (player.getPosition() < oldPos) {
+    if (shouldAwardPassGoOnForwardMove(board, oldPos, player.getPosition())) {
         player.addMoney(game.getGoSalary());
     }
 
@@ -78,7 +103,7 @@ void TeleportCard::apply(Player& player, GameEngine& game) {
     const int oldPos = player.getPosition();
     const int targetIdx = board.getIndexOf(targetCode);
 
-    if (targetIdx < oldPos) {
+    if (shouldAwardPassGoOnForwardMove(board, oldPos, targetIdx)) {
         player.addMoney(game.getGoSalary());
     }
 

@@ -374,7 +374,7 @@ bool PropertyManager::buildOnProperty(Player& player, StreetProperty& prop) {
             promptKey,
             "Apakah kamu ingin membangun " + label + " di " + prop.getName() + " dengan biaya M" + std::to_string(cost) + "? (y/n):",
             {"y", "n"});
-        engine.setPendingContinuation([this, &player, &prop]() {
+        engine.chainPendingContinuation([this, &player, &prop]() {
             CommandResult resumed;
             buildOnProperty(player, prop);
             return resumed;

@@ -87,6 +87,7 @@ public:
     bool storeCardInSpecialInventorySlot(const Card& card);
     bool consumeJailFreeCard();
 
+    int getAssetValue() const;
     int getTotalWealth() const;
     string getUsername() const;
 

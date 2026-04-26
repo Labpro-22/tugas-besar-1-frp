@@ -19,6 +19,7 @@ enum class CommandType {
     REDEEM,
     BUILD,
     PAY_JAIL_FINE,
+    USE_JAIL_CARD,
     USE_SKILL,
     SAVE,
     LOAD,

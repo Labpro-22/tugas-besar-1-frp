@@ -1105,6 +1105,13 @@ void SfmlGuiManager::maybeShowJailPopup() {
                         "assets/images/ui/btn_beli.png", true},
         PopupActionItem{"jail_roll_dice", "Roll Dadu",
                         "assets/images/ui/btn_cancel.png", true}};
+    payload.description =
+        "Percobaan ke-" + std::to_string(jailTurns + 1) + " dari 3.\n"
+        "Pilih tindakan:\n"
+        "  - Bayar Denda: bayar M" + std::to_string(jailFine) +
+        " lalu lempar dadu (double = bergerak + giliran lagi; non-double = bebas tapi tidak bergerak).\n"
+        "  - Roll Dadu: langsung lempar, keluar jika mendapat double, lalu lempar lagi untuk bergerak." +
+        (hasCard ? "\n  - Pakai Kartu: gunakan kartu Bebas dari Penjara, lalu lempar dadu normal." : "");
     if (hasCard) {
         payload.actionItems.push_back(
             PopupActionItem{"jail_use_card", "Pakai Kartu Bebas",

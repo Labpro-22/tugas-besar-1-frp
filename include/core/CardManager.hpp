@@ -39,6 +39,7 @@ public:
     std::shared_ptr<SkillCard> drawSkillCard(Player& player);
 
     bool hasPendingSkillDrop(const Player& player) const;
+    std::shared_ptr<SkillCard> peekPendingSkillDraw(const Player& player) const;
     std::vector<std::string> getPendingSkillDropOptions(const Player& player) const;
     void resolvePendingSkillDrop(Player& player, int discardSkillIndex);
 

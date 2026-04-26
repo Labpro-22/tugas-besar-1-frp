@@ -49,6 +49,7 @@ class GameEngine{
         bool turnActionTaken;
         bool diceRolledThisTurn;
         bool extraRollAllowedThisTurn;
+        bool paidJailFineThisTurn;
         GameOverReason gameOverReason_;
         int maxTurn;
         int initialBalance;

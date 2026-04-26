@@ -504,7 +504,7 @@ int AssetPanel::itemIndexAt(sf::Vector2f mousePos) const {
 
 void AssetPanel::updateData(const Player& currentPlayer, const std::string& systemLog) {
     m_currentPlayerName = currentPlayer.getUsername();
-    m_assetTotalValue = 0;
+    m_assetTotalValue = currentPlayer.getAssetValue();
     refreshPanelTitle();
 
     m_assetItems.clear();
@@ -514,13 +514,10 @@ void AssetPanel::updateData(const Player& currentPlayer, const std::string& syst
             continue;
         }
 
-        m_assetTotalValue += property->getPurchasePrice();
-
         int buildingCount = 0;
         std::string displayName = property->getName();
         if (const auto* street = dynamic_cast<const StreetProperty*>(property)) {
             buildingCount = street->getBuildingCount();
-            m_assetTotalValue += street->getBuildingSellValue() * 2;
             displayName = toStreetDisplayName(displayName);
         }
 

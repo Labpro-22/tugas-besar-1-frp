@@ -143,6 +143,14 @@ bool CardManager::hasPendingSkillDrop(const Player& player) const {
     return pendingSkillDraw.find(player.getUsername()) != pendingSkillDraw.end();
 }
 
+std::shared_ptr<SkillCard> CardManager::peekPendingSkillDraw(const Player& player) const {
+    auto it = pendingSkillDraw.find(player.getUsername());
+    if (it == pendingSkillDraw.end()) {
+        return nullptr;
+    }
+    return it->second;
+}
+
 std::vector<std::string> CardManager::getPendingSkillDropOptions(const Player& player) const {
     std::vector<std::string> options;
 

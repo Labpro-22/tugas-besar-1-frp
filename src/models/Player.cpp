@@ -1,6 +1,7 @@
- #include "../../include/models/Player.hpp"
+#include "../../include/models/Player.hpp"
 #include "../../include/models/Card.hpp"
 #include "../../include/models/Property.hpp"
+#include "../../include/models/StreetProperty.hpp"
 #include "../../include/utils/GameException.hpp"
 
 Player::Player(const string& username, int initialMoney)
@@ -151,6 +152,21 @@ bool Player::consumeJailFreeCard() {
     if (!hasJailFreeChanceCard_) return false;
     hasJailFreeChanceCard_ = false;
     return true;
+}
+
+int Player::getAssetValue() const {
+    int total = 0;
+    for (const Property* prop : ownedProperties) {
+        if (!prop) {
+            continue;
+        }
+
+        total += prop->getPurchasePrice();
+        if (const auto* street = dynamic_cast<const StreetProperty*>(prop)) {
+            total += street->getBuildingSellValue() * 2;
+        }
+    }
+    return total;
 }
 
 int Player::getTotalWealth() const {

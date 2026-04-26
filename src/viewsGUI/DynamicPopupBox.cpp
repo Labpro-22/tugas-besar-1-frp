@@ -46,7 +46,7 @@ int parseAuctionMinBidFromPromptId(const std::string& promptId) {
 
     try {
         const int highestBid = std::stoi(promptId.substr(prevUnderscore + 1, lastUnderscore - prevUnderscore - 1));
-        return std::max(0, highestBid) + 1;
+        return (highestBid < 0) ? 0 : (highestBid + 1);
     } catch (const std::exception&) {
         return 0;
     }
@@ -475,7 +475,7 @@ PopupPayload DynamicPopupBox::buildFromPrompt(const PromptRequest& prompt) {
                 texturePath = "assets/images/ui/btn_beli.png";
             }
 
-            if (key == "BID_MIN" && minBidFromId > 0) {
+            if (key == "BID_MIN") {
                 label = "BID MIN (M" + std::to_string(minBidFromId) + ")";
             }
         }
@@ -614,7 +614,7 @@ void DynamicPopupBox::update(sf::Vector2f mousePos) {
     }
 }
 
-bool DynamicPopupBox::handleTextEntered(sf::Uint32 unicode) {
+bool DynamicPopupBox::handleTextEntered(char32_t unicode) {
     if (!m_isVisible || m_isMinimized || (!m_promptWantsBidInput && !m_promptWantsTextInput)) {
         return false;
     }

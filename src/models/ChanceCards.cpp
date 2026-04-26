@@ -8,6 +8,31 @@
 #include "../../include/models/Tile.hpp"
 #include "../../include/utils/GameException.hpp"
 
+namespace {
+bool shouldAwardPassGoOnForwardMove(const Board& board,
+                                    int fromIndex,
+                                    int toIndex) {
+    if (!board.hasTile("GO")) {
+        return false;
+    }
+
+    const int steps = board.distanceTo(fromIndex, toIndex);
+    if (steps <= 0) {
+        return false;
+    }
+
+    const int goIndex = board.getIndexOf("GO");
+    int cursor = fromIndex;
+    for (int i = 0; i < steps; ++i) {
+        cursor = (cursor + 1) % board.size();
+        if (cursor == goIndex) {
+            return toIndex != goIndex;
+        }
+    }
+    return false;
+}
+}
+
 GoToNearestRailroadCard::GoToNearestRailroadCard()
     : ActionCard("Pergi ke stasiun terdekat.") {}
 
@@ -41,7 +66,7 @@ void GoToNearestRailroadCard::apply(Player& player, GameEngine& game) {
         throw GameException("No railroad tile found for GoToNearestRailroadCard.");
     }
 
-    if (bestIndex < current) {
+    if (shouldAwardPassGoOnForwardMove(board, current, bestIndex)) {
         player.addMoney(game.getGoSalary());
         game.pushEvent(GameEventType::MONEY, UiTone::SUCCESS,
             "Lewat GO",
@@ -126,7 +151,7 @@ void GoToNearestFestivalCard::apply(Player& player, GameEngine& game) {
         throw GameException("No festival tile found for GoToNearestFestivalCard.");
     }
 
-    if (bestIndex < current) {
+    if (shouldAwardPassGoOnForwardMove(board, current, bestIndex)) {
         player.addMoney(game.getGoSalary());
         game.pushEvent(GameEventType::MONEY, UiTone::SUCCESS,
             "Lewat GO",

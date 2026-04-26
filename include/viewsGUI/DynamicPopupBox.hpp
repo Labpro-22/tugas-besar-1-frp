@@ -65,7 +65,7 @@ public:
     bool isMinimized() const { return m_isMinimized; }
 
     void update(sf::Vector2f mousePos);
-    bool handleTextEntered(sf::Uint32 unicode);
+    bool handleTextEntered(char32_t unicode);
     bool handleKeyPressed(sf::Keyboard::Key key);
     bool handleMousePressed(sf::Vector2f mousePos);
     bool handleMouseReleased(sf::Vector2f mousePos);

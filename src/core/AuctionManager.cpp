@@ -15,6 +15,10 @@ std::string normalizeAuctionInput(std::string text) {
                    [](unsigned char c) { return static_cast<char>(std::toupper(c)); });
     return text;
 }
+
+int minimumValidBid(int highestBid) {
+    return (highestBid < 0) ? 0 : (highestBid + 1);
+}
 }
 
 AuctionManager::AuctionManager(GameEngine& engine, Bank& bank,
@@ -119,13 +123,19 @@ void AuctionManager::finalizeAuction() {
         return;
     }
 
+    const int winningBid = std::max(0, highestBid);
     bank.receivePayment(*highestBidder, highestBid);
     bank.transferPropertyToPlayer(auctionedProp, *highestBidder);
     logger.logAuctionResult(highestBidder->getUsername(),
-                            auctionedProp->getCode(), highestBid);
+                            auctionedProp->getCode(), winningBid);
     engine.pushEvent(GameEventType::AUCTION, UiTone::SUCCESS,
         "Lelang Selesai",
-        "Properti " + auctionedProp->getName() + " terjual kepada " + highestBidder->getUsername() + " dengan harga M" + std::to_string(highestBid) + "!");
+        "Properti " + auctionedProp->getName() + " terjual kepada " +
+            highestBidder->getUsername() + " dengan harga M" +
+            std::to_string(winningBid) + ".\n" +
+            highestBidder->getUsername() + " membayar M" +
+            std::to_string(winningBid) + " dan sisa uangnya sekarang M" +
+            std::to_string(highestBidder->getMoney()) + ".");
     resetState();
 }
 
@@ -157,6 +167,7 @@ void AuctionManager::continueAuction() {
         const int passesNeeded = std::max(0, totalActive - 1);
         const bool mustBid = (!atLeastOneBid && consecutivePasses >= passesNeeded);
         const int shownHighestBid = std::max(0, highestBid);
+        const int minBid = minimumValidBid(highestBid);
 
         std::ostringstream info;
         info << "Objek lelang: " << auctionedProp->getName()
@@ -166,7 +177,9 @@ void AuctionManager::continueAuction() {
         if (highestBidder) {
             info << " (" << highestBidder->getUsername() << ")";
         }
-        info << "\n\nGiliran " << current->getUsername() << " (Uang: M" << current->getMoney() << "):\n";
+        info << "\nBid minimum saat ini: M" << minBid
+             << "\n\nGiliran " << current->getUsername()
+             << " (Uang: M" << current->getMoney() << "):\n";
         if (mustBid) {
             info << "[INFO] Pemain ini wajib BID minimal sekali.\n";
         }
@@ -196,6 +209,7 @@ void AuctionManager::continueAuction() {
             } else {
                 promptMsg << " (belum ada penawaran)";
             }
+            promptMsg << "\nBid minimum saat ini: M" << minBid;
             promptMsg << "\nGiliran: " << current->getUsername()
                       << " (Uang: M" << current->getMoney() << ")\n"
                       << "Pilih aksi: PASS / BID_MIN / BID <angka>";
@@ -235,7 +249,7 @@ void AuctionManager::continueAuction() {
         if (input.rfind("BID ", 0) == 0 || input == "BID_MIN") {
             int bidAmount = 0;
             if (input == "BID_MIN") {
-                bidAmount = std::max(0, highestBid + 1);
+                bidAmount = minBid;
             } else {
                 try {
                     bidAmount = std::stoi(input.substr(4));
@@ -246,11 +260,10 @@ void AuctionManager::continueAuction() {
                 }
             }
 
-            if (bidAmount <= highestBid) {
+            if (bidAmount < minBid) {
                 engine.pushEvent(GameEventType::AUCTION, UiTone::WARNING,
                     "Bid Terlalu Rendah",
-                    "Bid harus lebih besar dari M" +
-                        std::to_string(shownHighestBid) + ".");
+                    "Bid harus minimal M" + std::to_string(minBid) + ".");
                 continue;
             }
 
