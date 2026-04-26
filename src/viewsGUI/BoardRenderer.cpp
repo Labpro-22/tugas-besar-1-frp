@@ -189,24 +189,48 @@ void BoardRenderer::drawBuildingIcons(sf::RenderTexture& tileCanvas,
         return;
     }
 
-    constexpr float kIconH  = 11.0f;
+    constexpr float kIconH   = 16.0f;
     constexpr float kIconGap = 2.0f;
+    constexpr float kRowGap  = 2.0f;
     const sf::Vector2u texSize = iconTex->getSize();
     if (texSize.x == 0 || texSize.y == 0) {
         return;
     }
     const float iconW = kIconH * static_cast<float>(texSize.x) / static_cast<float>(texSize.y);
-    const float totalW = static_cast<float>(count) * iconW +
-                         static_cast<float>(count - 1) * kIconGap;
-    float startX = (logicalSize.x - totalW) / 2.0f;
-    constexpr float kIconY = 56.0f;
 
-    for (int i = 0; i < count; ++i) {
+    // Use 2-row layout when there are more than 2 icons (3 or 4 houses).
+    const bool twoRows = (count > 2);
+    const int row1Count = twoRows ? 2 : count;
+    const int row2Count = twoRows ? (count - 2) : 0;
+
+    // Position the icon block: start higher when two rows are needed.
+    const float kIconY = twoRows ? 48.0f : 54.0f;
+
+    // Row 1
+    const float row1W = static_cast<float>(row1Count) * iconW +
+                        static_cast<float>(row1Count - 1) * kIconGap;
+    const float startX1 = (logicalSize.x - row1W) / 2.0f;
+    for (int i = 0; i < row1Count; ++i) {
         sf::Sprite sprite(*iconTex);
         sprite.setScale(iconW / static_cast<float>(texSize.x),
                         kIconH / static_cast<float>(texSize.y));
-        sprite.setPosition(startX + static_cast<float>(i) * (iconW + kIconGap), kIconY);
+        sprite.setPosition(startX1 + static_cast<float>(i) * (iconW + kIconGap), kIconY);
         tileCanvas.draw(sprite);
+    }
+
+    // Row 2 (only for 3 or 4 houses)
+    if (row2Count > 0) {
+        const float row2W = static_cast<float>(row2Count) * iconW +
+                            static_cast<float>(row2Count - 1) * kIconGap;
+        const float startX2 = (logicalSize.x - row2W) / 2.0f;
+        const float y2 = kIconY + kIconH + kRowGap;
+        for (int i = 0; i < row2Count; ++i) {
+            sf::Sprite sprite(*iconTex);
+            sprite.setScale(iconW / static_cast<float>(texSize.x),
+                            kIconH / static_cast<float>(texSize.y));
+            sprite.setPosition(startX2 + static_cast<float>(i) * (iconW + kIconGap), y2);
+            tileCanvas.draw(sprite);
+        }
     }
 }
 

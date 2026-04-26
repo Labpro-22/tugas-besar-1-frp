@@ -1,6 +1,8 @@
 #include "../../include/viewsGUI/LeaderboardView.hpp"
 
 #include "../../include/models/Player.hpp"
+#include "../../include/models/Property.hpp"
+#include "../../include/models/StreetProperty.hpp"
 
 #include <algorithm>
 #include <array>
@@ -71,8 +73,15 @@ void LeaderboardView::updateFromPlayers(const std::vector<Player*>& players) {
         }
 
         const int cash = player->getMoney();
-        const int assets = std::max(0, player->getTotalWealth() - cash);
-        const int total = player->getTotalWealth();
+        int assets = 0;
+        for (const Property* prop : player->getOwnedProperties()) {
+            if (!prop) continue;
+            assets += prop->getPurchasePrice();
+            if (const auto* street = dynamic_cast<const StreetProperty*>(prop)) {
+                assets += street->getBuildingSellValue() * 2;
+            }
+        }
+        const int total = cash + assets;
         m_rows.push_back(Row{player->getUsername(), cash, assets, total, static_cast<int>(i)});
     }
 

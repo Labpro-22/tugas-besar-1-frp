@@ -911,6 +911,30 @@ void SfmlGuiManager::processNextPrompt() {
     }
 
     if (m_pendingPrompts.empty()) {
+        if (m_engine.hasPendingContinuation()) {
+            try {
+                const CommandResult resumed = m_engine.resumePendingAction();
+                const bool hasMovement = resumed.movement.has_value();
+                consumeResult(resumed, !hasMovement);
+                enqueuePrompts(resumed.prompts);
+                if (!resumed.success && !hasMovement && resumed.prompts.empty()) {
+                    showBackendErrorPopup(buildErrorMessageFromResult(resumed));
+                    return;
+                }
+                if (hasMovement) {
+                    beginMovementAnimation(resumed.movement.value());
+                    return;
+                }
+                refreshFromEngineState();
+                processNextPrompt();
+            } catch (const std::exception& e) {
+                m_lastMessage = std::string("ERROR: ") + e.what();
+                m_engine.clearPendingContinuation();
+                m_engine.clearPromptAnswers();
+                showBackendErrorPopup(e.what());
+            }
+            return;
+        }
         resumeFlowAfterPopup();
         return;
     }
@@ -1068,17 +1092,24 @@ void SfmlGuiManager::maybeShowJailPopup() {
     payload.mode        = PopupMode::SPECIAL;
     payload.headerTitle = "DALAM PENJARA";
     payload.cardTitle   = current.getUsername() + " di Penjara";
+    const bool hasCard = current.hasJailFreeCard();
     payload.description =
         "Percobaan ke-" + std::to_string(jailTurns + 1) + " dari 3.\n"
         "Pilih tindakan:\n"
         "  • Bayar Denda: bayar M" + std::to_string(jailFine) +
-        " lalu lempar dadu untuk bergerak.\n"
-        "  • Roll Dadu: langsung lempar, keluar jika mendapat double.";
+        " lalu lempar dadu (double = bergerak + giliran lagi; non-double = bebas tapi tidak bergerak).\n"
+        "  • Roll Dadu: langsung lempar, keluar jika mendapat double." +
+        (hasCard ? "\n  • Pakai Kartu: gunakan kartu Bebas dari Penjara, lalu lempar dadu normal." : "");
     payload.actionItems = {
         PopupActionItem{"jail_pay_fine", "Bayar Denda (M" + std::to_string(jailFine) + ")",
                         "assets/images/ui/btn_beli.png", true},
         PopupActionItem{"jail_roll_dice", "Roll Dadu",
                         "assets/images/ui/btn_cancel.png", true}};
+    if (hasCard) {
+        payload.actionItems.push_back(
+            PopupActionItem{"jail_use_card", "Pakai Kartu Bebas",
+                            "assets/images/ui/btn_beli.png", true});
+    }
 
     m_currentState = GuiState::WAITING_CONFIRMATION;
     m_mainUi->setRollVisible(false);
@@ -1097,6 +1128,29 @@ void SfmlGuiManager::maybeShowJailPopup() {
                 consumeResult(result, true);
                 enqueuePrompts(result.prompts);
                 // Setelah bayar denda pemain bisa roll; kembalikan tombol roll
+                refreshFromEngineState();
+                m_currentState = GuiState::IDLE;
+                m_mainUi->setRollVisible(true);
+                setUiInputEnabled(true);
+                if (!m_pendingPrompts.empty()) {
+                    processNextPrompt();
+                }
+            } catch (const std::exception& e) {
+                m_lastMessage = std::string("ERROR: ") + e.what();
+                refreshFromEngineState();
+                resumeFlowAfterPopup();
+            }
+            return;
+        }
+
+        if (cleanId == "jail_use_card") {
+            try {
+                Command cmd;
+                cmd.type = CommandType::USE_JAIL_CARD;
+                cmd.raw  = "PAKAI_KARTU_BEBAS";
+                const CommandResult result = m_engine.processCommand(cmd);
+                consumeResult(result, true);
+                enqueuePrompts(result.prompts);
                 refreshFromEngineState();
                 m_currentState = GuiState::IDLE;
                 m_mainUi->setRollVisible(true);

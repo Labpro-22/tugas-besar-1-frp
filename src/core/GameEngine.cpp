@@ -332,6 +332,7 @@ GameEngine::GameEngine()
       turnActionTaken(false),
       diceRolledThisTurn(false),
       extraRollAllowedThisTurn(false),
+      paidJailFineThisTurn(false),
       gameOverReason_(GameOverReason::NONE),
       maxTurn(0),
       initialBalance(1000),
@@ -590,6 +591,37 @@ CommandResult GameEngine::processCommand(const Command& cmd) {
             logger->logDice(current.getUsername(), dice.getDie1(), dice.getDie2(), landed);
         }
 
+        // Setelah bayar denda: double = bebas + dapat lempar dadu lagi; non-double = bebas tanpa gerak.
+        if (paidJailFineThisTurn) {
+            paidJailFineThisTurn = false;
+            current.setStatus(PlayerStatus::ACTIVE);
+            current.setJailTurns(0);
+            if (rolledDouble) {
+                extraRollAllowedThisTurn = true;
+                flowResult.addEvent(
+                    GameEventType::TURN,
+                    UiTone::SUCCESS,
+                    "Bebas Penjara - Double!",
+                    current.getUsername() +
+                        " membayar denda dan mendapat double! "
+                        "Silakan lempar dadu lagi untuk bergerak.");
+            } else {
+                flowResult.addEvent(
+                    GameEventType::TURN,
+                    UiTone::INFO,
+                    "Bebas Penjara",
+                    current.getUsername() +
+                        " telah membayar denda dan bebas dari penjara, "
+                        "namun tidak mendapat giliran bergerak karena tidak mendapat double.");
+                chainPendingContinuation([this]() {
+                    CommandResult r;
+                    r.append(executeTurn());
+                    return r;
+                });
+            }
+            return;
+        }
+
         // Alur pemain yang sedang berada di penjara.
         if (current.isJailed()) {
             if (current.getJailTurns() >= 3) {
@@ -692,16 +724,13 @@ CommandResult GameEngine::processCommand(const Command& cmd) {
 
                 current.setStatus(PlayerStatus::ACTIVE);
                 current.setJailTurns(0);
-                current.resetConsecutiveDoubles();
-                // Keluar penjara tapi tetap di petak penjara; berikan giliran lempar lagi.
-                extraRollAllowedThisTurn = true;
                 flowResult.addEvent(
                     GameEventType::SYSTEM,
                     UiTone::SUCCESS,
                     "Double Penjara",
                     current.getUsername() +
-                        " mendapatkan double dan keluar dari penjara. "
-                        "Silakan lempar dadu kembali untuk bergerak.");
+                        " mendapatkan double dan keluar dari penjara!");
+                continueTurnAfterDiceResolution(flowResult, current, total, rolledDouble);
                 return;
             }
         }
@@ -986,6 +1015,7 @@ CommandResult GameEngine::processCommand(const Command& cmd) {
 
                     jailedPlayer->setStatus(PlayerStatus::ACTIVE);
                     jailedPlayer->setJailTurns(0);
+                    paidJailFineThisTurn = true;
                     if (logger) {
                         logger->log(jailedPlayer->getUsername(), "BAYAR_DENDA",
                             "Bayar denda penjara M" + std::to_string(jailFine));
@@ -1011,6 +1041,7 @@ CommandResult GameEngine::processCommand(const Command& cmd) {
         getBank().receivePayment(current, jailFine);
         current.setStatus(PlayerStatus::ACTIVE);
         current.setJailTurns(0);
+        paidJailFineThisTurn = true;
 
         if (logger) {
             logger->log(current.getUsername(), "BAYAR_DENDA",
@@ -1025,6 +1056,35 @@ CommandResult GameEngine::processCommand(const Command& cmd) {
             std::to_string(jailFine) + " dan bebas dari penjara. "
             "Silakan LEMPAR_DADU."
         );
+        return finalizeResult();
+    }
+
+    case CommandType::USE_JAIL_CARD: {
+        result.commandName = "PAKAI_KARTU_BEBAS";
+        Player& current = getCurrentPlayer();
+        if (!current.isJailed()) {
+            throw GameException("Kamu tidak sedang di penjara.");
+        }
+        if (!current.hasJailFreeCard()) {
+            throw GameException("Kamu tidak memiliki kartu Bebas dari Penjara.");
+        }
+        if (diceRolledThisTurn) {
+            throw GameException("Kartu Bebas dari Penjara harus digunakan sebelum melempar dadu.");
+        }
+        current.consumeJailFreeCard();
+        current.setStatus(PlayerStatus::ACTIVE);
+        current.setJailTurns(0);
+        if (logger) {
+            logger->log(current.getUsername(), "PAKAI_KARTU",
+                "Gunakan kartu Bebas dari Penjara");
+        }
+        result.addEvent(
+            GameEventType::CARD,
+            UiTone::SUCCESS,
+            "Kartu Bebas Penjara",
+            current.getUsername() +
+                " menggunakan kartu Bebas dari Penjara dan kini bebas. "
+                "Silakan LEMPAR_DADU.");
         return finalizeResult();
     }
 
@@ -1405,6 +1465,13 @@ CommandResult GameEngine::processCommand(const Command& cmd) {
             if (cardType == "MoveCard" && moveCardSteps > 0) {
                 int pathCursor = originalPosition;
                 appendForwardPath(movement.path, pathCursor, moveCardSteps, board->size());
+            } else if (cardType == "TeleportCard") {
+                const int forwardSteps =
+                    (finalPosition - originalPosition + board->size()) % board->size();
+                if (forwardSteps > 0) {
+                    int pathCursor = originalPosition;
+                    appendForwardPath(movement.path, pathCursor, forwardSteps, board->size());
+                }
             }
 
             if (movement.path.empty() || movement.path.back() != finalPosition) {
@@ -1674,17 +1741,15 @@ void GameEngine::continueTurnAfterDiceResolution(CommandResult& flowResult,
     if (rolledDouble) {
         current.incrementConsecutiveDoubles();
         if (current.getConsecutiveDoubles() >= 3) {
-            const bool jailed = sendPlayerToJail(current, "Triple Double");
+            sendPlayerToJail(current, "Triple Double");
 
             flowResult.addEvent(
                 GameEventType::DICE,
-                jailed ? UiTone::WARNING : UiTone::INFO,
+                UiTone::WARNING,
                 "Triple Double",
                 current.getUsername() +
-                    " melempar double 3 kali berturut-turut. " +
-                    (jailed
-                        ? "Bidak dipindah ke penjara dan giliran berakhir."
-                        : "Kartu Bebas dari Penjara terpakai, jadi tidak dipenjara."));
+                    " melempar double 3 kali berturut-turut. "
+                    "Bidak dipindah ke penjara dan giliran berakhir.");
 
             flowResult.append(executeTurn());
             return;
@@ -1694,52 +1759,30 @@ void GameEngine::continueTurnAfterDiceResolution(CommandResult& flowResult,
     }
 
     flowResult.append(moveCurrentPlayer(totalSteps));
-    if (!flowResult.prompts.empty() || hasPendingContinuation()) {
-        chainPendingContinuation([this, rolledDouble]() {
-            CommandResult resumed;
-            Player& resumedPlayer = getCurrentPlayer();
+    chainPendingContinuation([this, rolledDouble]() {
+        CommandResult resumed;
+        Player& resumedPlayer = getCurrentPlayer();
 
-            if (resumedPlayer.isJailed()) {
-                resumedPlayer.resetConsecutiveDoubles();
-                resumed.append(executeTurn());
-                return resumed;
-            }
-
-            if (rolledDouble) {
-                extraRollAllowedThisTurn = true;
-                resumed.addEvent(
-                    GameEventType::TURN,
-                    UiTone::INFO,
-                    "Double",
-                    resumedPlayer.getUsername() +
-                        " mendapatkan giliran tambahan karena melempar double.");
-                return resumed;
-            }
-
+        if (resumedPlayer.isJailed()) {
+            resumedPlayer.resetConsecutiveDoubles();
             resumed.append(executeTurn());
             return resumed;
-        });
-        return;
-    }
+        }
 
-    if (current.isJailed()) {
-        current.resetConsecutiveDoubles();
-        flowResult.append(executeTurn());
-        return;
-    }
+        if (rolledDouble) {
+            extraRollAllowedThisTurn = true;
+            resumed.addEvent(
+                GameEventType::TURN,
+                UiTone::INFO,
+                "Double",
+                resumedPlayer.getUsername() +
+                    " mendapatkan giliran tambahan karena melempar double.");
+            return resumed;
+        }
 
-    if (rolledDouble) {
-        extraRollAllowedThisTurn = true;
-        flowResult.addEvent(
-            GameEventType::TURN,
-            UiTone::INFO,
-            "Double",
-            current.getUsername() +
-                " mendapatkan giliran tambahan karena melempar double.");
-        return;
-    }
-
-    flowResult.append(executeTurn());
+        resumed.append(executeTurn());
+        return resumed;
+    });
 }
 
 void GameEngine::handleLanding(Player& p, Tile& t) {
@@ -1750,24 +1793,8 @@ bool GameEngine::sendPlayerToJail(Player& player, const std::string& source) {
     if (!board) {
         throw GameException("Board belum diinisialisasi");
     }
-
+    (void)source;
     player.setPosition(board->getIndexOf("PEN"));
-    if (player.consumeJailFreeCard()) {
-        player.setStatus(PlayerStatus::ACTIVE);
-        player.setJailTurns(0);
-        player.resetConsecutiveDoubles();
-        pushEvent(GameEventType::CARD, UiTone::SUCCESS,
-            "Kartu Kesempatan",
-            player.getUsername() +
-                " menggunakan kartu Bebas dari Penjara saat efek \"" + source +
-                "\". Pemain tidak jadi dipenjara.");
-        if (logger) {
-            logger->log(player.getUsername(), "KARTU_KESEMPATAN",
-                "Gunakan Bebas dari Penjara (" + source + ")");
-        }
-        return false;
-    }
-
     player.setStatus(PlayerStatus::JAILED);
     player.setJailTurns(0);
     player.resetConsecutiveDoubles();
@@ -2490,6 +2517,7 @@ void GameEngine::resetTurnActionFlags() {
     turnActionTaken = false;
     diceRolledThisTurn = false;
     extraRollAllowedThisTurn = false;
+    paidJailFineThisTurn = false;
 }
 
 CommandResult GameEngine::handlePendingSkillDropPrompt(const std::string& pendingUsername) {

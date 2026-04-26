@@ -43,6 +43,10 @@ void GoToNearestRailroadCard::apply(Player& player, GameEngine& game) {
 
     if (bestIndex < current) {
         player.addMoney(game.getGoSalary());
+        game.pushEvent(GameEventType::MONEY, UiTone::SUCCESS,
+            "Lewat GO",
+            player.getUsername() + " menerima gaji GO sebesar M" +
+                std::to_string(game.getGoSalary()) + ".");
     }
 
     player.setPosition(bestIndex);
