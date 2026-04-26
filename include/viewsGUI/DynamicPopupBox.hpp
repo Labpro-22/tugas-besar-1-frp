@@ -17,7 +17,8 @@ enum class PopupMode {
     TAX,
     SPECIAL,
     INFO,
-    FULL_IMAGE_DISMISSABLE
+    FULL_IMAGE_DISMISSABLE,
+    ENDGAME
 };
 
 struct PopupActionItem {
@@ -140,6 +141,7 @@ private:
     void rebuildActionSprites();
     void updateActionVisuals();
     void layoutFullImage();
+    void layoutEndGame();
     void invokeAction(const std::string& actionId);
 
     bool loadTextureWithFallback(sf::Texture& texture, const std::vector<std::string>& paths) const;

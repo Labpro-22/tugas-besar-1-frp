@@ -1,4 +1,5 @@
 #include "../../include/viewsGUI/DynamicPopupBox.hpp"
+#include "../../include/viewsGUI/Layout1920.hpp"
 
 #include <algorithm>
 #include <cctype>
@@ -180,6 +181,20 @@ void appendPopupDebugLog(const std::string& line) {
     if (out.is_open()) {
         out << line << '\n';
     }
+}
+
+sf::FloatRect endGameBoardCenterRect() {
+    constexpr float kCenterInset = 2.0f;
+    constexpr float kCornerRatio = 90.0f / 720.0f;
+    const float cornerSize = viewsGUI::Layout1920::kBoardSize * kCornerRatio;
+    const float centerAreaSize = viewsGUI::Layout1920::kBoardSize - (2.0f * cornerSize);
+    const float centerSize = centerAreaSize - (2.0f * kCenterInset);
+
+    return sf::FloatRect(
+        viewsGUI::Layout1920::kBoardOrigin.x + cornerSize + kCenterInset,
+        viewsGUI::Layout1920::kBoardOrigin.y + cornerSize + kCenterInset,
+        centerSize,
+        centerSize);
 }
 } // namespace
 
@@ -812,6 +827,18 @@ void DynamicPopupBox::render(sf::RenderWindow& window) const {
         return;
     }
 
+    if (m_mode == PopupMode::ENDGAME) {
+        window.draw(m_popupBaseSprite);
+        window.draw(m_headerText);
+        window.draw(m_cardTitleText);
+        for (const auto& action : m_actionSprites) {
+            window.draw(action.sprite);
+            window.draw(action.label);
+        }
+        window.draw(m_minimizeIconSprite);
+        return;
+    }
+
     window.draw(m_popupBaseSprite);
     window.draw(m_headerText);
 
@@ -852,6 +879,14 @@ void DynamicPopupBox::render(sf::RenderWindow& window) const {
 }
 
 void DynamicPopupBox::layoutExpanded() {
+    if (m_mode == PopupMode::ENDGAME) {
+        layoutEndGame();
+        return;
+    }
+
+    m_headerText.setFillColor(sf::Color(53, 45, 36));
+    m_cardTitleText.setFillColor(sf::Color(53, 45, 36));
+
     const sf::Vector2f popupPos((m_windowSize.x - PopupLayout::kPopupWidth) * 0.5f,
                                 (m_windowSize.y - PopupLayout::kPopupHeight) * 0.5f);
 
@@ -994,6 +1029,80 @@ void DynamicPopupBox::layoutFullImage() {
     m_fullImageSprite.setPosition(m_windowSize.x * 0.5f, m_windowSize.y * 0.5f);
 }
 
+void DynamicPopupBox::layoutEndGame() {
+    // Endgame text layout tuning block.
+    // Ubah angka-angka ini untuk geser posisi teks judul dan pemenang.
+    constexpr float kHeaderYOffset = 110.0f;
+    constexpr float kWinnerYOffset = 230.0f;
+    constexpr float kButtonsStartYOffset = 290.0f;
+    constexpr float kEndgameButtonWidth = 260.0f;
+    constexpr float kEndgameButtonHeight = 76.0f;
+    constexpr float kEndgameButtonGap = 16.0f;
+    constexpr float kMinimizeRight = 26.0f;
+    constexpr float kMinimizeTop = 20.0f;
+
+    const sf::FloatRect centerRect = endGameBoardCenterRect();
+
+    const sf::Vector2u baseSize = m_popupBaseTexture.getSize();
+    if (baseSize.x > 0 && baseSize.y > 0) {
+        m_popupBaseSprite.setScale(centerRect.width / static_cast<float>(baseSize.x),
+                                   centerRect.height / static_cast<float>(baseSize.y));
+    }
+    m_popupBaseSprite.setPosition(centerRect.left, centerRect.top);
+
+    m_headerText.setFillColor(sf::Color(53, 45, 36));
+    const sf::FloatRect headerBounds = m_headerText.getLocalBounds();
+    m_headerText.setOrigin(headerBounds.left + (headerBounds.width * 0.5f),
+                           headerBounds.top + (headerBounds.height * 0.5f));
+    m_headerText.setPosition(centerRect.left + (centerRect.width * 0.5f),
+                             centerRect.top + kHeaderYOffset);
+
+    // Warna krem untuk teks "<player> WINS!" / "DRAW (...)".
+    m_cardTitleText.setFillColor(sf::Color(239, 222, 184));
+    const sf::FloatRect winnerBounds = m_cardTitleText.getLocalBounds();
+    m_cardTitleText.setOrigin(winnerBounds.left + (winnerBounds.width * 0.5f),
+                              winnerBounds.top + (winnerBounds.height * 0.5f));
+    m_cardTitleText.setPosition(centerRect.left + (centerRect.width * 0.5f),
+                                centerRect.top + kWinnerYOffset);
+
+    const float buttonWidth = kEndgameButtonWidth;
+    const float buttonHeight = kEndgameButtonHeight;
+    const float buttonGap = kEndgameButtonGap;
+    const float startY = centerRect.top + kButtonsStartYOffset;
+    const float centerX = centerRect.left + (centerRect.width * 0.5f);
+
+    for (size_t i = 0; i < m_actionSprites.size(); ++i) {
+        SpriteAction& action = m_actionSprites[i];
+        const sf::Vector2u texSize = action.texture.getSize();
+        if (texSize.x > 0 && texSize.y > 0) {
+            action.sprite.setScale(buttonWidth / static_cast<float>(texSize.x),
+                                   buttonHeight / static_cast<float>(texSize.y));
+        }
+
+        const float y = startY + static_cast<float>(i) * (buttonHeight + buttonGap);
+        action.sprite.setPosition(centerX - (buttonWidth * 0.5f), y);
+
+        action.label.setCharacterSize(30U);
+        const sf::FloatRect labelBounds = action.label.getLocalBounds();
+        action.label.setOrigin(labelBounds.left + (labelBounds.width * 0.5f),
+                               labelBounds.top + (labelBounds.height * 0.5f));
+        action.label.setPosition(centerX, y + (buttonHeight * 0.5f) - 2.0f);
+    }
+
+    const sf::Vector2u iconSize = m_minimizeIconTexture.getSize();
+    if (iconSize.x > 0 && iconSize.y > 0) {
+        m_minimizeIconSprite.setScale(PopupLayout::kMinimizeIconSize / static_cast<float>(iconSize.x),
+                                      PopupLayout::kMinimizeIconSize / static_cast<float>(iconSize.y));
+    }
+    m_minimizeIconSprite.setPosition(centerRect.left + centerRect.width - kMinimizeRight,
+                                     centerRect.top + kMinimizeTop);
+
+    m_priceText.setString("");
+    m_descriptionText.setString("");
+    m_rentTexts.clear();
+    updateActionVisuals();
+}
+
 void DynamicPopupBox::layoutMinimized() {
     const sf::Vector2f pos(m_windowSize.x - PopupLayout::kMinimizedWidth - PopupLayout::kMinimizedRight,
                            m_windowSize.y - PopupLayout::kMinimizedHeight - PopupLayout::kMinimizedBottom);
@@ -1013,6 +1122,8 @@ void DynamicPopupBox::layoutMinimized() {
 }
 
 void DynamicPopupBox::rebuildCardTexts() {
+    m_headerText.setFillColor(sf::Color(53, 45, 36));
+    m_cardTitleText.setFillColor(sf::Color(53, 45, 36));
     m_headerText.setString(m_payload.headerTitle);
     m_cardTitleText.setString(
         wrapTextByWidth(m_headerFont, m_cardTitleText.getCharacterSize(), PopupLayout::kCardTextMaxWidth, m_payload.cardTitle));

@@ -31,7 +31,8 @@ enum class GuiState {
     ANIMATING_DICE,
     ANIMATING_PIECE,
     WAITING_CONFIRMATION,
-    SHOWING_TIMED_CARD
+    SHOWING_TIMED_CARD,
+    END_GAME
 };
 
 class SfmlGuiManager {
@@ -80,6 +81,8 @@ private:
     std::string m_preTurnSkillGateKey;
     bool m_preTurnSkillHandled;
     std::string m_jailPopupShownForKey;
+    bool m_endGamePopupShown;
+    std::string m_endGameBannerText;
 
     void processEvents();
     void update(sf::Time dt);
@@ -133,6 +136,11 @@ private:
     std::vector<int> buildDummyRentRows(const Property& property) const;
     sf::Color resolvePropertyColor(const Property& property) const;
     void showBackendErrorPopup(const std::string& message, std::function<void()> onOk = {});
+    void updateEndGameStateFromResult(const CommandResult& result);
+    void maybeShowEndGamePopup();
+    void showEndGamePopup();
+    std::string buildFallbackEndGameBannerText() const;
+    std::string parseWinnerBannerFromMessage(const GameEvent& event) const;
     void resumeFlowAfterPopup();
 };
 } // namespace viewsGUI

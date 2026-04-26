@@ -268,6 +268,35 @@ void centerTextInRect(sf::Text& text, const sf::FloatRect& rect) {
     text.setOrigin(bounds.left + (bounds.width * 0.5f), bounds.top + (bounds.height * 0.5f));
     text.setPosition(rect.left + (rect.width * 0.5f), rect.top + (rect.height * 0.5f));
 }
+
+std::string cleanWinnerToken(std::string value) {
+    value = trimCopy(value);
+    auto isNameChar = [](unsigned char c) {
+        return std::isalnum(c) != 0 || c == '_' || c == '-' || c == ' ';
+    };
+
+    while (!value.empty() && !isNameChar(static_cast<unsigned char>(value.front()))) {
+        value.erase(value.begin());
+    }
+    while (!value.empty() && !isNameChar(static_cast<unsigned char>(value.back()))) {
+        value.pop_back();
+    }
+
+    return trimCopy(value);
+}
+
+std::vector<std::string> splitWinnerNamesByComma(const std::string& value) {
+    std::vector<std::string> names;
+    std::stringstream ss(value);
+    std::string token;
+    while (std::getline(ss, token, ',')) {
+        token = cleanWinnerToken(token);
+        if (!token.empty()) {
+            names.push_back(token);
+        }
+    }
+    return names;
+}
 } // namespace
 
 namespace viewsGUI {
@@ -286,7 +315,9 @@ SfmlGuiManager::SfmlGuiManager(GameEngine& engine)
       m_pendingSaveFilename(""),
       m_uiBasePath("assets/images/ui/"),
       m_preTurnSkillHandled(false),
-      m_jailPopupShownForKey("") {
+      m_jailPopupShownForKey(""),
+      m_endGamePopupShown(false),
+      m_endGameBannerText("") {
     if (!loadFontWithFallback()) {
         throw std::runtime_error("Gagal memuat font GUI. Pastikan assets/fonts atau font sistem tersedia.");
     }
@@ -539,6 +570,8 @@ void SfmlGuiManager::startNewGameFromMenu(int playerCount) {
         m_preTurnSkillGateKey.clear();
         m_preTurnSkillHandled = false;
         m_jailPopupShownForKey.clear();
+        m_endGamePopupShown = false;
+        m_endGameBannerText.clear();
         if (m_popupBox->isVisible()) {
             m_popupBox->hide();
         }
@@ -612,6 +645,8 @@ void SfmlGuiManager::submitLoadFromMenuRequest(const std::string& filename) {
         m_preTurnSkillGateKey.clear();
         m_preTurnSkillHandled = false;
         m_jailPopupShownForKey.clear();
+        m_endGamePopupShown = false;
+        m_endGameBannerText.clear();
         if (m_popupBox->isVisible()) {
             m_popupBox->hide();
         }
@@ -1468,6 +1503,7 @@ void SfmlGuiManager::cacheTimedChanceTransition(const CommandResult& result) {
 
 void SfmlGuiManager::consumeResult(const CommandResult& result, bool syncPiecePositions) {
     cacheTimedChanceTransition(result);
+    updateEndGameStateFromResult(result);
     m_lastMessage = buildMessageFromResult(result);
     enqueueCardEventPopups(result);
     std::string logPanelText = m_engine.getTransactionLogReport();
@@ -1750,10 +1786,11 @@ void SfmlGuiManager::processEvents() {
             }
 
             if (event.key.control && event.key.code == sf::Keyboard::S) {
-                if (m_currentState != GuiState::IDLE || m_popupBox->isVisible()) {
+                if ((m_currentState != GuiState::IDLE && m_currentState != GuiState::END_GAME) ||
+                    m_popupBox->isVisible()) {
                     continue;
                 }
-                if (!m_engine.canSaveAtTurnStart()) {
+                if (!m_engine.isGameOver() && !m_engine.canSaveAtTurnStart()) {
                     showBackendErrorPopup("SIMPAN hanya boleh dilakukan di awal giliran sebelum aksi apapun.");
                     continue;
                 }
@@ -1875,6 +1912,8 @@ void SfmlGuiManager::update(sf::Time dt) {
         }
         return;
     }
+
+    maybeShowEndGamePopup();
 
     const bool debugPopupVisible = m_debugDicePopup && m_debugDicePopup->isVisible();
     const bool popupExpanded = m_popupBox->isVisible() && !m_popupBox->isMinimized();
@@ -2048,7 +2087,31 @@ void SfmlGuiManager::handlePopupAction(const std::string& actionId) {
 
     try {
         m_popupBox->hide();
+        m_endGamePopupShown = false;
         m_landingMovementContext.reset();
+
+        if (stableActionId == "endgame_new_game") {
+            m_endGameBannerText.clear();
+            m_currentState = GuiState::START_MENU;
+            m_mainUi->setRollVisible(false);
+            setUiInputEnabled(false);
+            openStartMenuPlayerPopup();
+            return;
+        }
+
+        if (stableActionId == "endgame_load_game") {
+            m_endGameBannerText.clear();
+            m_currentState = GuiState::START_MENU;
+            m_mainUi->setRollVisible(false);
+            setUiInputEnabled(false);
+            openLoadFilenamePopupFromMenu();
+            return;
+        }
+
+        if (stableActionId == "endgame_save_game") {
+            openSaveFilenamePopup();
+            return;
+        }
 
         if (stableActionId == "buy_land") {
             if (!resolvePendingPurchase("y")) {
@@ -2377,9 +2440,163 @@ void SfmlGuiManager::showBackendErrorPopup(const std::string& message, std::func
     });
 }
 
+void SfmlGuiManager::updateEndGameStateFromResult(const CommandResult& result) {
+    for (const GameEvent& event : result.events) {
+        const std::string parsedBanner = parseWinnerBannerFromMessage(event);
+        if (!parsedBanner.empty()) {
+            m_endGameBannerText = parsedBanner;
+        }
+    }
+
+    if (!m_engine.isGameOver()) {
+        m_endGamePopupShown = false;
+        m_endGameBannerText.clear();
+    }
+}
+
+std::string SfmlGuiManager::parseWinnerBannerFromMessage(const GameEvent& event) const {
+    if (event.type != GameEventType::GAME_OVER) {
+        return "";
+    }
+
+    const std::string upperTitle = upperCopy(event.title);
+    if (upperTitle.find("PEMENANG") == std::string::npos) {
+        return "";
+    }
+
+    const std::string upperMessage = upperCopy(event.message);
+    if (upperMessage.find("TIDAK ADA PEMENANG") != std::string::npos) {
+        return "DRAW";
+    }
+
+    if (upperTitle.find("SERI") != std::string::npos) {
+        const std::vector<std::string> names = splitWinnerNamesByComma(event.message);
+        if (names.empty()) {
+            return "DRAW";
+        }
+        std::ostringstream drawBanner;
+        drawBanner << "DRAW (";
+        for (size_t i = 0; i < names.size(); ++i) {
+            if (i > 0) {
+                drawBanner << ",";
+            }
+            drawBanner << names[i];
+        }
+        drawBanner << ")";
+        return drawBanner.str();
+    }
+
+    const size_t menangPos = upperMessage.find("MENANG");
+    if (menangPos != std::string::npos) {
+        const std::string winnerName = cleanWinnerToken(event.message.substr(0, menangPos));
+        if (!winnerName.empty()) {
+            return winnerName + " WINS!";
+        }
+    }
+
+    const std::vector<std::string> names = splitWinnerNamesByComma(event.message);
+    if (names.size() > 1) {
+        std::ostringstream drawBanner;
+        drawBanner << "DRAW (";
+        for (size_t i = 0; i < names.size(); ++i) {
+            if (i > 0) {
+                drawBanner << ",";
+            }
+            drawBanner << names[i];
+        }
+        drawBanner << ")";
+        return drawBanner.str();
+    }
+    if (names.size() == 1) {
+        return names.front() + " WINS!";
+    }
+
+    return "";
+}
+
+std::string SfmlGuiManager::buildFallbackEndGameBannerText() const {
+    const std::vector<Player*> activePlayers = m_engine.getActivePlayers();
+    if (activePlayers.empty()) {
+        return "DRAW";
+    }
+    if (activePlayers.size() == 1 && activePlayers.front() != nullptr) {
+        return activePlayers.front()->getUsername() + " WINS!";
+    }
+
+    std::ostringstream drawBanner;
+    drawBanner << "DRAW (";
+    bool first = true;
+    for (Player* player : activePlayers) {
+        if (player == nullptr) {
+            continue;
+        }
+        if (!first) {
+            drawBanner << ",";
+        }
+        drawBanner << player->getUsername();
+        first = false;
+    }
+    drawBanner << ")";
+    return first ? "DRAW" : drawBanner.str();
+}
+
+void SfmlGuiManager::showEndGamePopup() {
+    PopupPayload payload;
+    payload.mode = PopupMode::ENDGAME;
+    payload.headerTitle = "GAME OVER";
+    payload.cardTitle = m_endGameBannerText.empty() ? buildFallbackEndGameBannerText()
+                                                    : m_endGameBannerText;
+    payload.description = payload.cardTitle;
+    payload.actionItems = {
+        PopupActionItem{"endgame_new_game", "NEW GAME", "assets/images/ui/popup_option_normal.png", true},
+        PopupActionItem{"endgame_load_game", "LOAD GAME", "assets/images/ui/popup_option_normal.png", true},
+        PopupActionItem{"endgame_save_game", "SAVE GAME", "assets/images/ui/popup_option_normal.png", true}};
+
+    m_currentState = GuiState::END_GAME;
+    m_mainUi->setRollVisible(false);
+    setUiInputEnabled(false);
+    m_endGamePopupShown = true;
+
+    m_popupBox->show(payload, [this](const std::string& actionId) {
+        handlePopupAction(actionId);
+    });
+}
+
+void SfmlGuiManager::maybeShowEndGamePopup() {
+    if (!m_engine.isGameOver()) {
+        m_endGamePopupShown = false;
+        return;
+    }
+
+    if (m_currentState == GuiState::START_MENU ||
+        m_currentState == GuiState::ANIMATING_DICE ||
+        m_currentState == GuiState::ANIMATING_PIECE ||
+        m_currentState == GuiState::SHOWING_TIMED_CARD) {
+        return;
+    }
+
+    if (m_popupBox->isVisible() || m_endGamePopupShown) {
+        return;
+    }
+
+    if (m_endGameBannerText.empty()) {
+        m_endGameBannerText = buildFallbackEndGameBannerText();
+    }
+    showEndGamePopup();
+}
+
 void SfmlGuiManager::resumeFlowAfterPopup() {
     m_landingMovementContext.reset();
     refreshFromEngineState();
+    if (m_engine.isGameOver()) {
+        m_currentState = GuiState::END_GAME;
+        m_mainUi->setRollVisible(false);
+        setUiInputEnabled(false);
+        m_endGamePopupShown = false;
+        maybeShowEndGamePopup();
+        return;
+    }
+
     m_currentState = GuiState::IDLE;
     m_mainUi->setRollVisible(true);
     setUiInputEnabled(true);
