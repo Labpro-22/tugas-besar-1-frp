@@ -14,13 +14,11 @@ void SaveLoadManager::validatePath(const string& filename) const {
     if (filename.empty()) {
         throw SaveLoadException("Nama file tidak boleh kosong");
     }
-    // Ekstensi yang didukung: .txt atau .nmp
+    // Ekstensi yang didukung: .txt
     const bool txtExt = filename.size() >= 4 &&
                         filename.substr(filename.size() - 4) == ".txt";
-    const bool nmpExt = filename.size() >= 4 &&
-                        filename.substr(filename.size() - 4) == ".nmp";
-    if (!txtExt && !nmpExt) {
-        throw SaveLoadException("File save harus berekstensi .txt atau .nmp: " + filename);
+    if (!txtExt) {
+        throw SaveLoadException("File save harus berekstensi .txt: " + filename);
     }
 }
 

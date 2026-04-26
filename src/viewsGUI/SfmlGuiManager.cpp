@@ -195,12 +195,19 @@ std::string trimCopy(std::string value) {
 std::string normalizeSaveFilename(std::string value, const std::string& fallbackName) {
     value = trimCopy(value);
     if (value.empty()) {
-        return fallbackName;
+        value = fallbackName;
     }
-    if (value.find('.') == std::string::npos) {
-        value += ".nmp";
+
+    std::filesystem::path path(value);
+    if (path.extension().empty() ||
+        path.extension() != ".txt") {
+        path.replace_extension(".txt");
     }
-    return value;
+    if (!path.has_parent_path()) {
+        path = std::filesystem::path("data") / path;
+    }
+
+    return path.generic_string();
 }
 
 int parseSkillTargetPromptCardIndex(const std::string& promptId) {
@@ -615,7 +622,7 @@ void SfmlGuiManager::openLoadFilenamePopupFromMenu() {
     PromptRequest prompt;
     prompt.id = "file_input_load";
     prompt.title = "MUAT PERMAINAN";
-    prompt.message = "Masukkan nama file untuk dimuat (default: game_save.txt).";
+    prompt.message = "Masukkan nama file untuk dimuat (default: data/file_save.txt).";
     prompt.required = false;
     prompt.options = {
         PromptOption{"SUBMIT", "Muat"},
@@ -630,7 +637,7 @@ void SfmlGuiManager::openLoadFilenamePopupFromMenu() {
             return;
         }
 
-        const std::string filename = normalizeSaveFilename(cleanAnswer, "game_save.nmp");
+        const std::string filename = normalizeSaveFilename(cleanAnswer, "data/file_save.txt");
         submitLoadFromMenuRequest(filename);
     });
 }
@@ -739,7 +746,7 @@ void SfmlGuiManager::openSaveFilenamePopup() {
     PromptRequest prompt;
     prompt.id = "file_input_save";
     prompt.title = "SIMPAN PERMAINAN";
-    prompt.message = "Masukkan nama file save (default: game_save.nmp).";
+    prompt.message = "Masukkan nama file save (default: data/file_save.txt).";
     prompt.required = false;
     prompt.options = {
         PromptOption{"SUBMIT", "Simpan"},
@@ -759,7 +766,7 @@ void SfmlGuiManager::openSaveFilenamePopup() {
             return;
         }
 
-        const std::string filename = normalizeSaveFilename(cleanAnswer, "game_save.nmp");
+        const std::string filename = normalizeSaveFilename(cleanAnswer, "data/file_save.txt");
         submitSaveRequest(filename, false);
     });
 }

@@ -154,10 +154,10 @@ void GameUI::bootstrapIfNeeded() {
 
         try {
             if (normalized == "LOAD" || normalized == "MUAT") {
-                std::cout << "Nama file save (.txt, default file_save.txt): ";
+                std::cout << "Nama file save (.txt, default data/file_save.txt): ";
                 std::string filename;
                 std::getline(std::cin, filename);
-                if (filename.empty()) filename = "file_save.txt";
+                if (filename.empty()) filename = "data/file_save.txt";
 
                 CommandResult loadResult = engine.loadGame(filename);
                 std::cout << formatter.format(loadResult) << "\n";

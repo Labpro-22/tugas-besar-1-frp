@@ -457,7 +457,7 @@ PopupPayload DynamicPopupBox::buildFromPrompt(const PromptRequest& prompt) {
     if (isFileInputPrompt) {
         payload.headerTitle = prompt.title.empty() ? "INPUT FILE" : prompt.title;
         payload.cardTitle = "NAMA FILE";
-        m_bidInputHint.setString("Contoh: game_save.nmp");
+        m_bidInputHint.setString("Contoh: data/file_save.txt");
     }
 
     if (isBankruptcyPrompt) {

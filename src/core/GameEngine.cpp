@@ -92,6 +92,26 @@ std::string normalizePlayerNameKey(std::string raw) {
     return raw;
 }
 
+std::string normalizeSaveLoadFilename(std::string raw,
+                                      const std::string& fallbackName) {
+    raw = trimCopy(raw);
+    if (raw.empty()) {
+        raw = fallbackName;
+    }
+
+    std::filesystem::path path(raw);
+    if (path.extension().empty() ||
+        path.extension() != ".txt") {
+        path.replace_extension(".txt");
+    }
+
+    if (!path.has_parent_path()) {
+        path = std::filesystem::path("data") / path;
+    }
+
+    return path.generic_string();
+}
+
 string toPlayerStatusString(const Player& p) {
     if (p.isBankrupt()) return "BANKRUPT";
     if (p.isJailed()) {
@@ -542,8 +562,11 @@ CommandResult GameEngine::loadGame(const std::string& filename) {
         initBoard();
     }
 
+    const std::string targetFilename =
+        normalizeSaveLoadFilename(filename, "data/file_save.txt");
+
     SaveLoadManager saveLoad;
-    saveLoad.loadInto(*this, filename);
+    saveLoad.loadInto(*this, targetFilename);
 
     if (logger) {
         logger->setCurrentTurn(turnManager.getTurnNumber());
@@ -560,7 +583,7 @@ CommandResult GameEngine::loadGame(const std::string& filename) {
         GameEventType::SAVE_LOAD,
         UiTone::SUCCESS,
         "Berhasil Memuat",
-        "State permainan berhasil dimuat dari file: " + filename);
+        "State permainan berhasil dimuat dari file: " + targetFilename);
     return result;
 }
 
@@ -589,10 +612,8 @@ SaveGameResult GameEngine::saveGame(const std::string& filename, bool overwrite)
         return result;
     }
 
-    std::string targetFilename = trimCopy(filename);
-    if (targetFilename.empty()) {
-        targetFilename = "game_save.nmp";
-    }
+    std::string targetFilename =
+        normalizeSaveLoadFilename(filename, "data/file_save.txt");
 
     std::error_code ec;
     if (!overwrite && std::filesystem::exists(targetFilename, ec) && !ec) {
@@ -904,8 +925,9 @@ CommandResult GameEngine::processCommand(const Command& cmd) {
     case CommandType::SAVE:
     {
         result.commandName = "SIMPAN";
-        const string filename = cmd.args.empty() ? "file_save.txt" : cmd.args[0];
-        const SaveGameResult saveResult = saveGame(filename, true);
+        const std::string requestedFilename =
+            cmd.args.empty() ? "data/file_save.txt" : cmd.args[0];
+        const SaveGameResult saveResult = saveGame(requestedFilename, true);
         if (saveResult.status != SaveGameStatus::SUCCESS) {
             throw GameException(saveResult.message.empty()
                                     ? "Gagal menyimpan permainan."
@@ -915,7 +937,7 @@ CommandResult GameEngine::processCommand(const Command& cmd) {
             GameEventType::SAVE_LOAD,
             UiTone::SUCCESS,
             "Berhasil Menyimpan",
-            "Menyimpan permainan...\nPermainan berhasil disimpan ke: " + filename
+            "Menyimpan permainan...\n" + saveResult.message
         );
         flushEvents(result);
         return result;
@@ -923,10 +945,13 @@ CommandResult GameEngine::processCommand(const Command& cmd) {
 
     case CommandType::LOAD:
     {
-        const string filename = cmd.args.empty() ? "file_save.txt" : cmd.args[0];
-        result = loadGame(filename);
+        const std::string requestedFilename =
+            cmd.args.empty() ? "data/file_save.txt" : cmd.args[0];
+        const std::string normalizedFilename =
+            normalizeSaveLoadFilename(requestedFilename, "data/file_save.txt");
+        result = loadGame(requestedFilename);
         if (logger && !players.empty()) {
-            logger->logLoad(getCurrentPlayer().getUsername(), filename);
+            logger->logLoad(getCurrentPlayer().getUsername(), normalizedFilename);
         }
         // Change the success message loaded by loadGame() method to have exact wording.
         result.events.clear();
