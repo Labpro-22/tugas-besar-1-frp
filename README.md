@@ -1,5 +1,6 @@
 # Nimonspoli — Tugas Besar 1 IF2010 Pemrograman Berorientasi Objek
 
+![Cover Nimonspoli Furap](NimonspoliHomeScreen.png)
 
 ## Deskripsi Program
 
@@ -38,13 +39,12 @@ Program ditampilkan dalam **GUI** (Graphical User Interface) dengan menggunakan 
 
 ## Requirements
 
-| Kebutuhan | Versi minimal | Keterangan |
-|---|---|---|
-| **Sistem Operasi** | Linux / WSL2 (Ubuntu 20.04+) | - |
-| **Compiler C++** | g++ ≥ 9.0 | Mendukung C++17 |
-| **make** | GNU Make ≥ 4.0 | Untuk build via Makefile |
-| **SFML** | 2.5.x atau 2.6.x | Hanya dibutuhkan untuk versi GUI |
-
+| Kebutuhan          | Versi minimal                | Keterangan                       |
+| ------------------ | ---------------------------- | -------------------------------- |
+| **Sistem Operasi** | Linux / WSL2 (Ubuntu 20.04+) | -                                |
+| **Compiler C++**   | g++ ≥ 9.0                    | Mendukung C++17                  |
+| **make**           | GNU Make ≥ 4.0               | Untuk build via Makefile         |
+| **SFML**           | 2.5.x atau 2.6.x             | Hanya dibutuhkan untuk versi GUI |
 
 ## Cara Compile (WSL / Linux)
 
@@ -78,10 +78,8 @@ cd /tugas-besar-1-frp
 ```bash
 make gui
 ```
+
 Hasil binary: `bin/game_gui`
-
-
-
 
 #### Membersihkan hasil build
 
@@ -117,15 +115,15 @@ atau langsung:
 
 Semua file konfigurasi berada di direktori `config/`:
 
-| File | Isi |
-|---|---|
-| `property.txt` | Daftar properti, harga, sewa, dan biaya bangunan |
-| `aksi.txt` | Pemetaan petak aksi ke papan |
+| File           | Isi                                               |
+| -------------- | ------------------------------------------------- |
+| `property.txt` | Daftar properti, harga, sewa, dan biaya bangunan  |
+| `aksi.txt`     | Pemetaan petak aksi ke papan                      |
 | `railroad.txt` | Tabel sewa stasiun berdasarkan jumlah kepemilikan |
-| `utility.txt` | Faktor pengali sewa utilitas |
-| `tax.txt` | Konfigurasi PPH (flat & persentase) dan PBM |
-| `special.txt` | Gaji GO dan denda penjara |
-| `misc.txt` | `MAX_TURN` dan saldo awal pemain |
+| `utility.txt`  | Faktor pengali sewa utilitas                      |
+| `tax.txt`      | Konfigurasi PPH (flat & persentase) dan PBM       |
+| `special.txt`  | Gaji GO dan denda penjara                         |
+| `misc.txt`     | `MAX_TURN` dan saldo awal pemain                  |
 
 Anda dapat mengubah nilai-nilai di file ini untuk kustomisasi.
 
@@ -154,12 +152,12 @@ tugas-besar-1-frp/
 
 ## Anggota Tim
 
-| NIM | Nama |
-|---|---|
-| 13524006 | Gabriella Botimada Lubis |
+| NIM      | Nama                       |
+| -------- | -------------------------- |
+| 13524006 | Gabriella Botimada Lubis   |
 | 13524032 | Juan Oloando Simanungkalit |
-| 13524064 | Stefani Angeline Oroh |
-| 13524093 | Reinsen Silitonga |
-| 13524098 | Reva Natania Sitohang |
+| 13524064 | Stefani Angeline Oroh      |
+| 13524093 | Reinsen Silitonga          |
+| 13524098 | Reva Natania Sitohang      |
 
 ---
