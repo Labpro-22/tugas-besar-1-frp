@@ -1980,6 +1980,7 @@ void SfmlGuiManager::update(sf::Time dt) {
             return;
         }
 
+        m_currentState = GuiState::IDLE;
         refreshFromEngineState();
         processNextPrompt();
         return;
@@ -1998,6 +1999,7 @@ void SfmlGuiManager::update(sf::Time dt) {
             m_deferredMovement.reset();
             showLandingPopup(landing);
         } else {
+            m_currentState = GuiState::IDLE;
             refreshFromEngineState();
             processNextPrompt();
         }

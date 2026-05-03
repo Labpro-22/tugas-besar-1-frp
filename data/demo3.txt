@@ -1,0 +1,99 @@
+5 15
+3
+P1 723 PLN ACTIVE
+3
+TeleportCard
+MoveCard 2
+MoveCard 3
+P2 0 GBR ACTIVE
+3
+DiscountCard 5
+DiscountCard 10
+LassoCard
+P3 440 BGR ACTIVE
+3
+DiscountCard 15
+LassoCard
+ShieldCard
+P2 P1 P3
+P3
+28
+GRT street BANK BANK 1 0 0
+TSK street BANK BANK 1 0 0
+GBR railroad P2 OWNED 1 0 0
+BGR street P2 OWNED 1 0 H
+DPK street P2 OWNED 1 0 4
+BKS street P2 OWNED 1 0 4
+MGL street P3 OWNED 1 0 0
+PLN utility P2 OWNED 1 0 0
+SOL street BANK BANK 1 0 0
+YOG street BANK BANK 1 0 0
+STB railroad P2 OWNED 1 0 0
+MAL street P3 OWNED 1 0 0
+SMG street P3 MORTGAGED 1 0 0
+SBY street BANK BANK 1 0 0
+MKS street BANK BANK 1 0 0
+BLP street BANK BANK 1 0 0
+MND street BANK BANK 1 0 0
+TUG railroad P3 OWNED 1 0 0
+PLB street BANK BANK 1 0 0
+PKB street P2 OWNED 1 0 0
+PAM utility BANK BANK 1 0 0
+MED street P3 MORTGAGED 1 0 0
+BDG street BANK BANK 1 0 0
+DEN street BANK BANK 1 0 0
+MTR street BANK BANK 1 0 0
+GUB railroad BANK BANK 1 0 0
+JKT street P1 OWNED 1 0 0
+IKN street P2 OWNED 1 0 0
+0
+49
+1 P2 DADU Lempar: 3+3=6 -> mendarat di BGR
+1 P2 BELI Beli BOGOR (BGR) seharga M100
+1 P2 DADU Lempar: 1+1=2 -> mendarat di DPK
+1 P2 BELI Beli DEPOK (DPK) seharga M100
+1 P2 DADU Lempar: 5+2=7 -> mendarat di STB
+1 P2 RAILROAD STASIUN_BANDUNG (STB) kini milik P2 (otomatis - RAILROAD)
+1 P1 DADU Lempar: 3+3=6 -> mendarat di BGR
+1 P1 SEWA Bayar M6 ke P2 (BGR, tanah kosong)
+1 P1 DADU Lempar: 4+5=9 -> mendarat di STB
+1 P1 SEWA Bayar M25 ke P2 (STB, railroad)
+1 P3 DADU Lempar: 2+2=4 -> mendarat di PPH
+1 P3 PAJAK Bayar PPH 10% M40
+1 P3 DADU Lempar: 3+4=7 -> mendarat di MGL
+1 P3 BELI Beli MAGELANG (MGL) seharga M140
+2 P2 DADU Lempar: 6+6=12 -> mendarat di PKB
+2 P2 BELI Beli PEKANBARU (PKB) seharga M260
+2 P2 DADU Lempar: 6+6=12 -> mendarat di IKN
+2 P2 BELI Beli IBU_KOTA_NUSANTARA (IKN) seharga M400
+2 P2 DADU Lempar: 4+3=7 -> mendarat di BGR
+2 P2 BANGUN Bangun rumah di BGR. Biaya M20
+2 P1 DADU Lempar: 1+2=3 -> mendarat di SMG
+2 P3 LELANG_BID Bid M0 untuk SMG
+2 P3 LELANG_HASIL P3 memenangkan lelang SMG seharga M0
+2 P3 DADU Lempar: 4+1=5 -> mendarat di MAL
+2 P3 BELI Beli MALANG (MAL) seharga M180
+3 P2 DADU Lempar: 2+1=3 -> mendarat di BKS
+3 P2 BANGUN Bangun rumah di BKS. Biaya M20
+3 P1 DADU Lempar: 6+5=11 -> mendarat di MED
+3 P3 LELANG_BID Bid M0 untuk MED
+3 P3 LELANG_HASIL P3 memenangkan lelang MED seharga M0
+3 P3 DADU Lempar: 4+5=9 -> mendarat di TUG
+3 P3 RAILROAD STASIUN_TUGU (TUG) kini milik P3 (otomatis - RAILROAD)
+4 P2 SEWA Bayar M10 ke P3 (MGL, tanah kosong)
+4 P2 KARTU Pakai MoveCard -> diaktifkan
+4 P2 DADU Lempar: 2+3=5 -> mendarat di MAL
+4 P2 SEWA Bayar M14 ke P3 (MAL, tanah kosong)
+4 P1 DADU Lempar: 5+3=8 -> mendarat di JKT
+4 P1 BELI Beli JAKARTA (JKT) seharga M350
+4 P3 DADU Lempar: 6+6=12 -> mendarat di JKT
+4 P3 SEWA Bayar M35 ke P1 (JKT, tanah kosong)
+4 P3 DADU Lempar: 5+4=9 -> mendarat di BGR
+4 P3 GADAI Gadai MED. Dapat M225
+4 P3 GADAI Gadai SMG. Dapat M140
+5 P2 DADU Lempar: 4+1=5 -> mendarat di GBR
+5 P2 RAILROAD STASIUN_GAMBIR (GBR) kini milik P2 (otomatis - RAILROAD)
+5 P1 DADU Lempar: 4+4=8 -> mendarat di GBR
+5 P1 SEWA Bayar M50 ke P2 (GBR, railroad)
+5 P1 DADU Lempar: 4+3=7 -> mendarat di PLN
+5 P1 SEWA Bayar M112 ke P2 (PLN, utility)

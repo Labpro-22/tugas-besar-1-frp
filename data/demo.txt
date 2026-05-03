@@ -1,0 +1,70 @@
+2 15
+3
+P1 0 STB ACTIVE
+1
+TeleportCard
+P2 9999 STB ACTIVE
+2
+DiscountCard 5
+MoveCard 2
+P3 220 MGL ACTIVE
+1
+DiscountCard 15
+P2 P1 P3
+P2
+28
+GRT street BANK BANK 1 0 0
+TSK street BANK BANK 1 0 0
+GBR railroad BANK BANK 1 0 0
+BGR street P2 OWNED 1 0 0
+DPK street P2 OWNED 1 0 0
+BKS street P2 OWNED 1 0 0
+MGL street P3 OWNED 1 0 0
+PLN utility BANK BANK 1 0 0
+SOL street BANK BANK 1 0 0
+YOG street BANK BANK 1 0 0
+STB railroad P2 OWNED 1 0 0
+MAL street BANK BANK 1 0 0
+SMG street BANK BANK 1 0 0
+SBY street BANK BANK 1 0 0
+MKS street BANK BANK 1 0 0
+BLP street BANK BANK 1 0 0
+MND street BANK BANK 1 0 0
+TUG railroad BANK BANK 1 0 0
+PLB street BANK BANK 1 0 0
+PKB street BANK BANK 1 0 0
+PAM utility BANK BANK 1 0 0
+MED street BANK BANK 1 0 0
+BDG street BANK BANK 1 0 0
+DEN street BANK BANK 1 0 0
+MTR street BANK BANK 1 0 0
+GUB railroad BANK BANK 1 0 0
+JKT street BANK BANK 1 0 0
+IKN street BANK BANK 1 0 0
+11
+ShieldCard
+MoveCard
+LassoCard
+ShieldCard
+MoveCard
+DiscountCard
+DemolitionCard
+DemolitionCard
+TeleportCard
+LassoCard
+MoveCard
+14
+1 P2 DADU Lempar: 3+3=6 -> mendarat di BGR
+1 P2 BELI Beli BOGOR (BGR) seharga M100
+1 P2 DADU Lempar: 1+1=2 -> mendarat di DPK
+1 P2 BELI Beli DEPOK (DPK) seharga M100
+1 P2 DADU Lempar: 5+2=7 -> mendarat di STB
+1 P2 RAILROAD STASIUN_BANDUNG (STB) kini milik P2 (otomatis - RAILROAD)
+1 P1 DADU Lempar: 3+3=6 -> mendarat di BGR
+1 P1 SEWA Bayar M6 ke P2 (BGR, tanah kosong)
+1 P1 DADU Lempar: 4+5=9 -> mendarat di STB
+1 P1 SEWA Bayar M25 ke P2 (STB, railroad)
+1 P3 DADU Lempar: 2+2=4 -> mendarat di PPH
+1 P3 PAJAK Bayar PPH 10% M40
+1 P3 DADU Lempar: 3+4=7 -> mendarat di MGL
+1 P3 BELI Beli MAGELANG (MGL) seharga M140
